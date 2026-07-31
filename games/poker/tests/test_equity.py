@@ -1,8 +1,15 @@
 import random
-from collections.abc import Callable
+import time
+
+import pytest
 
 from engine.cards import Card, Rank, Suit
 from games.poker.equity import Equity, hand_equity
+
+# The turn/unknown-opponent enumeration is the slowest case in this file. The bound is a
+# regression guard against an accidental blow-up in cost, not a benchmark - it sits well
+# above the ~2s this actually takes so it won't flake on a slower CI runner.
+TURN_ENUMERATION_TIME_LIMIT_SECONDS = 10.0
 
 
 def C(rank: Rank, suit: Suit) -> Card:
@@ -55,6 +62,59 @@ def test_river_board_that_plays_itself_ties_every_time() -> None:
     assert result.trials == 990
     assert result.ties == 990
     assert result.equity == 0.5
+
+
+def test_river_against_a_known_opponent_is_a_single_showdown() -> None:
+    # Nothing is unknown: both hands and the whole board are fixed, so there is exactly
+    # one showdown to score. Trip aces beat the opponent's pair of kings.
+    result = hand_equity(
+        [C(Rank.ACE, Suit.CLUBS), C(Rank.ACE, Suit.DIAMONDS)],
+        [
+            C(Rank.ACE, Suit.HEARTS), C(Rank.SEVEN, Suit.SPADES), C(Rank.TWO, Suit.CLUBS),
+            C(Rank.THREE, Suit.DIAMONDS), C(Rank.NINE, Suit.HEARTS),
+        ],
+        opponent_hole=[C(Rank.KING, Suit.CLUBS), C(Rank.KING, Suit.DIAMONDS)],
+    )
+    assert result.exact
+    assert result.trials == 1
+    assert result.wins == 1
+    assert result.equity == 1.0
+
+
+def test_flop_against_an_unknown_opponent_is_sampled() -> None:
+    # Two unknown board cards plus two unknown opponent cards is far too many
+    # combinations to enumerate, so this must take the Monte Carlo path.
+    result = hand_equity(
+        [C(Rank.ACE, Suit.CLUBS), C(Rank.KING, Suit.CLUBS)],
+        [C(Rank.TWO, Suit.HEARTS), C(Rank.SEVEN, Suit.SPADES), C(Rank.NINE, Suit.DIAMONDS)],
+        iterations=300,
+        rng=random.Random(31),
+    )
+    assert not result.exact
+    assert result.trials == 300
+    # a real mix of outcomes, not a degenerate all-win or all-loss run
+    assert 0.0 < result.equity < 1.0
+    assert result.wins > 0
+    assert result.losses > 0
+
+
+def test_turn_against_an_unknown_opponent_enumerates_every_combination() -> None:
+    # 46 unseen cards: each can be the river, leaving 45 from which the opponent's two
+    # cards are drawn. So 46 x C(45, 2) = 46 x 990 = 45,540 exact showdowns.
+    started = time.perf_counter()
+    result = hand_equity(
+        [C(Rank.ACE, Suit.CLUBS), C(Rank.KING, Suit.CLUBS)],
+        [
+            C(Rank.TWO, Suit.HEARTS), C(Rank.SEVEN, Suit.SPADES),
+            C(Rank.NINE, Suit.DIAMONDS), C(Rank.QUEEN, Suit.HEARTS),
+        ],
+    )
+    elapsed = time.perf_counter() - started
+
+    assert result.exact
+    assert result.trials == 46 * 990 == 45_540
+    assert 0.0 < result.equity < 1.0
+    assert elapsed < TURN_ENUMERATION_TIME_LIMIT_SECONDS
 
 
 def test_turn_enumerates_every_river_card_exactly() -> None:
@@ -127,19 +187,16 @@ def test_invalid_inputs_are_rejected() -> None:
     ace = C(Rank.ACE, Suit.CLUBS)
     king = C(Rank.KING, Suit.CLUBS)
 
-    bad_calls: tuple[Callable[[], Equity], ...] = (
-        lambda: hand_equity([ace]),  # only one hole card
-        lambda: hand_equity([ace, king], [ace]),  # board of one card
-        lambda: hand_equity([ace, king], opponent_hole=[ace]),  # opponent short a card
-        lambda: hand_equity([ace, ace]),  # duplicate card
-        lambda: hand_equity([ace, king], opponent_hole=[ace, C(Rank.TWO, Suit.HEARTS)]),
-    )
-    for bad_call in bad_calls:
-        try:
-            bad_call()
-            raise AssertionError("expected ValueError")
-        except ValueError:
-            pass
+    with pytest.raises(ValueError):
+        hand_equity([ace])  # only one hole card
+    with pytest.raises(ValueError):
+        hand_equity([ace, king], [ace])  # board of one card
+    with pytest.raises(ValueError):
+        hand_equity([ace, king], opponent_hole=[ace])  # opponent short a card
+    with pytest.raises(ValueError):
+        hand_equity([ace, ace])  # the same card twice in one hand
+    with pytest.raises(ValueError):
+        hand_equity([ace, king], opponent_hole=[ace, C(Rank.TWO, Suit.HEARTS)])  # shared card
 
 
 def test_opponent_range_is_reserved_but_not_implemented() -> None:
