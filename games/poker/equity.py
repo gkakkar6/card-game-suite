@@ -1,13 +1,16 @@
 """Hand equity for hold'em: how often a player's hole cards win by showdown.
 
-Street-aware method (ARCHITECTURE.md §5, poker week 2):
-- turn/river (at most one unknown board card): exact enumeration, no sampling
-- flop/preflop (too many completions to enumerate): Monte Carlo estimate
+The method is chosen by how much work exact enumeration would actually be
+(ARCHITECTURE.md §5, poker week 2): few enough combinations and every one is scored
+exactly, otherwise the answer is estimated by Monte Carlo. That depends on both the
+street and whether the opponent's cards are known - a flop against a known hand is
+only 990 combinations, while the same flop against an unknown hand is over a million.
 
 Heads-up only for now, and the opponent's unknown cards are drawn uniformly from
 the remaining deck. Weighted ranges and multiway pots are stretch goals per §5.
 """
 
+import math
 import random
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
@@ -16,11 +19,15 @@ from itertools import combinations
 from engine.cards import Card, standard_52
 from games.poker.hand_evaluator import best_hand
 
+DECK_SIZE = 52
 HOLE_CARDS = 2
 FULL_BOARD = 5
 VALID_BOARD_SIZES = (0, 3, 4, 5)  # preflop, flop, turn, river
-# once four board cards are known there are few enough completions to enumerate exactly
-EXACT_ENUMERATION_MIN_BOARD = 4
+# Enumerate exactly up to this many showdowns, sample beyond it. The heaviest case that
+# stays exact is a turn against an unknown opponent (45,540 showdowns, roughly two
+# seconds); the next case up is a flop against an unknown opponent at over a million,
+# so anywhere in between draws the same line.
+MAX_EXACT_ENUMERATION = 50_000
 DEFAULT_ITERATIONS = 10_000
 
 # Placeholder for weighted/non-uniform opponent ranges. The parameter exists so callers
@@ -64,6 +71,20 @@ class Equity:
     @property
     def loss_probability(self) -> float:
         return self.losses / self.trials if self.trials else 0.0
+
+
+def enumeration_size(board_size: int, opponent_known: bool) -> int:
+    """How many showdowns exact enumeration would have to score.
+
+    Every way of completing the board, times every opponent hand drawable from what's
+    left when the opponent's cards aren't known.
+    """
+    missing = FULL_BOARD - board_size
+    unseen = DECK_SIZE - HOLE_CARDS - board_size - (HOLE_CARDS if opponent_known else 0)
+    boards = math.comb(unseen, missing)
+    if opponent_known:
+        return boards
+    return boards * math.comb(unseen - missing, HOLE_CARDS)
 
 
 def _remaining_deck(known: Sequence[Card]) -> list[Card]:
@@ -172,9 +193,9 @@ def hand_equity(
 ) -> Equity:
     """Equity for `player_hole` against one opponent, given the board so far.
 
-    Enumerates exactly on the turn and river; estimates by Monte Carlo on the flop and
-    preflop, where `iterations` and `rng` apply. Pass `opponent_hole` to run against a
-    specific holding, otherwise the opponent's cards are uniformly random.
+    Enumerates every combination when there are few enough of them, otherwise estimates
+    by Monte Carlo, where `iterations` and `rng` apply. Pass `opponent_hole` to run
+    against a specific holding, otherwise the opponent's cards are uniformly random.
     """
     if opponent_range is not None:
         raise NotImplementedError(
@@ -183,7 +204,7 @@ def hand_equity(
     _validate(player_hole, board, opponent_hole)
 
     deck = _remaining_deck([*player_hole, *board, *(opponent_hole or ())])
-    if len(board) >= EXACT_ENUMERATION_MIN_BOARD:
+    if enumeration_size(len(board), opponent_hole is not None) <= MAX_EXACT_ENUMERATION:
         return _tally(_enumerate_outcomes(player_hole, board, opponent_hole, deck), exact=True)
     outcomes = _simulate_outcomes(
         player_hole, board, opponent_hole, deck, iterations, rng or random.Random()

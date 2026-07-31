@@ -4,7 +4,7 @@ import time
 import pytest
 
 from engine.cards import Card, Rank, Suit
-from games.poker.equity import Equity, hand_equity
+from games.poker.equity import Equity, enumeration_size, hand_equity
 
 # The turn/unknown-opponent enumeration is the slowest case in this file. The bound is a
 # regression guard against an accidental blow-up in cost, not a benchmark - it sits well
@@ -154,23 +154,55 @@ def test_monte_carlo_is_reproducible_with_seeded_rng() -> None:
     assert (first.wins, first.ties, first.losses) == (second.wins, second.ties, second.losses)
 
 
-def test_flop_and_preflop_use_monte_carlo_turn_and_river_use_enumeration() -> None:
+def test_enumeration_size_matches_the_combinatorics() -> None:
+    # Known opponent: only the board has to be completed.
+    assert enumeration_size(5, opponent_known=True) == 1  # nothing left to deal
+    assert enumeration_size(4, opponent_known=True) == 44  # each possible river
+    assert enumeration_size(3, opponent_known=True) == 990  # C(45, 2) turn+river pairs
+    assert enumeration_size(0, opponent_known=True) == 1_712_304  # C(48, 5) whole boards
+
+    # Unknown opponent: every board completion is multiplied by every opponent hand
+    # drawable from the cards it leaves behind.
+    assert enumeration_size(5, opponent_known=False) == 990
+    assert enumeration_size(4, opponent_known=False) == 46 * 990
+    assert enumeration_size(3, opponent_known=False) == 1081 * 990
+
+
+def test_method_is_chosen_by_cost_not_by_street() -> None:
+    # A flop against a known hand is 990 combinations - cheaper than a river against an
+    # unknown one - so the street alone can't decide the method. What matters is how
+    # much work enumerating would actually be.
     hole = [C(Rank.ACE, Suit.CLUBS), C(Rank.KING, Suit.CLUBS)]
     flop = [C(Rank.TWO, Suit.HEARTS), C(Rank.SEVEN, Suit.SPADES), C(Rank.NINE, Suit.DIAMONDS)]
     opponent = [C(Rank.FOUR, Suit.CLUBS), C(Rank.FIVE, Suit.DIAMONDS)]
 
+    # ~1.7M combinations even though the opponent is known: too many, so sample.
     preflop = hand_equity(hole, iterations=50, rng=random.Random(1), opponent_hole=opponent)
     assert not preflop.exact
     assert preflop.trials == 50
 
-    on_flop = hand_equity(hole, flop, iterations=50, rng=random.Random(1), opponent_hole=opponent)
-    assert not on_flop.exact
+    # same flop, unknown opponent: over a million combinations, so sample.
+    flop_unknown = hand_equity(hole, flop, iterations=50, rng=random.Random(1))
+    assert not flop_unknown.exact
 
-    on_turn = hand_equity(
-        hole, [*flop, C(Rank.QUEEN, Suit.HEARTS)], opponent_hole=opponent
-    )
+    on_turn = hand_equity(hole, [*flop, C(Rank.QUEEN, Suit.HEARTS)], opponent_hole=opponent)
     assert on_turn.exact
     assert on_turn.trials == 44  # every remaining river card
+
+
+def test_flop_against_a_known_opponent_is_enumerated_exactly() -> None:
+    # Both hands are known and only the turn and river are missing, so every one of the
+    # C(45, 2) = 990 turn/river pairs can be scored exactly - no sampling needed, and
+    # the seeded rng below is therefore ignored entirely.
+    result = hand_equity(
+        [C(Rank.ACE, Suit.CLUBS), C(Rank.KING, Suit.CLUBS)],
+        [C(Rank.TWO, Suit.HEARTS), C(Rank.SEVEN, Suit.SPADES), C(Rank.NINE, Suit.DIAMONDS)],
+        opponent_hole=[C(Rank.FOUR, Suit.CLUBS), C(Rank.FIVE, Suit.DIAMONDS)],
+        rng=random.Random(1),
+    )
+    assert result.exact
+    assert result.trials == 990
+    assert 0.0 < result.equity < 1.0
 
 
 def test_probabilities_sum_to_one() -> None:
@@ -200,11 +232,8 @@ def test_invalid_inputs_are_rejected() -> None:
 
 
 def test_opponent_range_is_reserved_but_not_implemented() -> None:
-    try:
+    with pytest.raises(NotImplementedError):
         hand_equity(
             [C(Rank.ACE, Suit.CLUBS), C(Rank.KING, Suit.CLUBS)],
             opponent_range=[(C(Rank.QUEEN, Suit.HEARTS), C(Rank.QUEEN, Suit.SPADES))],
         )
-        raise AssertionError("expected NotImplementedError")
-    except NotImplementedError:
-        pass
