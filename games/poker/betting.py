@@ -32,11 +32,13 @@ class BettingRound:
     first_to_act: int = 0
     min_bet: int = 1
     initial_bets: list[int] | None = None  # e.g. posted blinds, already deducted from stacks
+    max_raises: int | None = None  # cap on raises this round; None means uncapped
 
     pot: int = field(init=False, default=0)
     bets: list[int] = field(init=False)
     folded: set[int] = field(init=False)
     all_in: set[int] = field(init=False)
+    raises_made: int = field(init=False, default=0)
     current_player: int = field(init=False)
     _acted_since_last_raise: set[int] = field(init=False)
     # players who can no longer raise this round because the last raise was a short
@@ -52,6 +54,7 @@ class BettingRound:
         self.pot = sum(self.bets)
         self.folded = set()
         self.all_in = {p for p, stack in enumerate(self.stacks) if stack == 0}
+        self.raises_made = 0
         self._acted_since_last_raise = set()
         self._capped_from_short_raise = set()
         self.current_player = self.first_to_act
@@ -71,10 +74,14 @@ class BettingRound:
     def current_bet(self) -> int:
         return max(self.bets, default=0)
 
+    def _raise_cap_reached(self) -> bool:
+        return self.max_raises is not None and self.raises_made >= self.max_raises
+
     def _can_raise(self, to_call: int) -> bool:
         return (
             self.stacks[self.current_player] > to_call
             and self.current_player not in self._capped_from_short_raise
+            and not self._raise_cap_reached()
             and bool(self._other_active_non_all_in_players())
         )
 
@@ -108,6 +115,8 @@ class BettingRound:
             self._acted_since_last_raise.add(player)
         else:  # BET or RAISE
             self._apply_bet_or_raise(player, action)
+            if action.type is ActionType.RAISE:
+                self.raises_made += 1
 
         if self.stacks[player] == 0 and player not in self.folded:
             self.all_in.add(player)

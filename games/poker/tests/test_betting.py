@@ -1,3 +1,5 @@
+import pytest
+
 from games.poker.betting import ActionType, BettingAction, BettingRound
 
 
@@ -70,6 +72,44 @@ def test_all_in_short_raise_is_legal_even_below_minimum() -> None:
     round_.apply(BettingAction(ActionType.RAISE, amount=15))
     assert round_.stacks[1] == 0
     assert 1 in round_.all_in
+
+
+def _raise_war(max_raises: int | None) -> BettingRound:
+    """Open for 10, then trade three raises. Returns the round with player 0 to act."""
+    round_ = BettingRound(stacks=[200, 200], min_bet=10, max_raises=max_raises)
+    round_.apply(BettingAction(ActionType.BET, amount=10))
+    round_.apply(BettingAction(ActionType.RAISE, amount=20))
+    round_.apply(BettingAction(ActionType.RAISE, amount=30))
+    round_.apply(BettingAction(ActionType.RAISE, amount=40))
+    return round_
+
+
+def test_raise_cap_removes_raise_once_reached() -> None:
+    round_ = _raise_war(max_raises=3)
+    assert round_.raises_made == 3  # the opening bet is not a raise
+    assert round_.current_player == 0
+    # player 0 has both the chips and the room to raise, so only the cap stops them
+    assert round_.stacks[0] > round_.current_bet - round_.bets[0]
+    assert round_.legal_actions() == [ActionType.FOLD, ActionType.CALL]
+
+    with pytest.raises(ValueError):
+        round_.apply(BettingAction(ActionType.RAISE, amount=50))
+
+
+def test_uncapped_round_keeps_allowing_raises() -> None:
+    round_ = _raise_war(max_raises=None)
+    assert round_.raises_made == 3
+    assert ActionType.RAISE in round_.legal_actions()
+    round_.apply(BettingAction(ActionType.RAISE, amount=50))
+    assert round_.raises_made == 4
+
+
+def test_raise_cap_of_one_allows_a_single_raise() -> None:
+    round_ = BettingRound(stacks=[200, 200], min_bet=10, max_raises=1)
+    round_.apply(BettingAction(ActionType.BET, amount=10))
+    assert ActionType.RAISE in round_.legal_actions()
+    round_.apply(BettingAction(ActionType.RAISE, amount=20))
+    assert round_.legal_actions() == [ActionType.FOLD, ActionType.CALL]
 
 
 def test_initial_bets_seed_pot_for_posted_blinds() -> None:
