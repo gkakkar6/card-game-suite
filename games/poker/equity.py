@@ -189,6 +189,7 @@ def hand_equity(
     opponent_hole: Sequence[Card] | None = None,
     opponent_range: OpponentRange | None = None,
     iterations: int = DEFAULT_ITERATIONS,
+    max_exact_enumeration: int = MAX_EXACT_ENUMERATION,
     rng: random.Random | None = None,
 ) -> Equity:
     """Equity for `player_hole` against one opponent, given the board so far.
@@ -196,6 +197,10 @@ def hand_equity(
     Enumerates every combination when there are few enough of them, otherwise estimates
     by Monte Carlo, where `iterations` and `rng` apply. Pass `opponent_hole` to run
     against a specific holding, otherwise the opponent's cards are uniformly random.
+
+    `max_exact_enumeration` trades accuracy for speed: lowering it pushes more cases
+    onto sampling. Callers that run this on every decision (games/poker/action_values.py)
+    lower it, while the default stays precise for tests and one-off analysis.
     """
     if opponent_range is not None:
         raise NotImplementedError(
@@ -204,7 +209,7 @@ def hand_equity(
     _validate(player_hole, board, opponent_hole)
 
     deck = _remaining_deck([*player_hole, *board, *(opponent_hole or ())])
-    if enumeration_size(len(board), opponent_hole is not None) <= MAX_EXACT_ENUMERATION:
+    if enumeration_size(len(board), opponent_hole is not None) <= max_exact_enumeration:
         return _tally(_enumerate_outcomes(player_hole, board, opponent_hole, deck), exact=True)
     outcomes = _simulate_outcomes(
         player_hole, board, opponent_hole, deck, iterations, rng or random.Random()

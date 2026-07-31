@@ -112,6 +112,42 @@ def test_raise_cap_of_one_allows_a_single_raise() -> None:
     assert round_.legal_actions() == [ActionType.FOLD, ActionType.CALL]
 
 
+def test_calling_more_than_the_stack_goes_all_in_for_less() -> None:
+    # A short stack facing a bet it cannot cover must end at exactly zero. Chip
+    # conservation alone does not catch this: subtracting 50 from a 5-chip stack and
+    # adding 50 to the pot still balances, it just leaves the stack at -45.
+    round_ = BettingRound(stacks=[200, 5], min_bet=2)
+    round_.apply(BettingAction(ActionType.BET, amount=50))
+    round_.apply(BettingAction(ActionType.CALL))
+
+    assert round_.stacks[1] == 0
+    assert round_.bets[1] == 5  # only what they actually had
+    assert round_.pot == 55  # the 50 bet plus their 5, not 100
+    assert 1 in round_.all_in
+    assert round_.is_settled()  # nothing left for them to decide
+
+
+def test_action_skips_a_player_left_all_in_by_their_blind() -> None:
+    # A one-chip stack posting a small blind of one is already all-in before the round
+    # starts, so it has no decision to make and the action has to begin elsewhere.
+    round_ = BettingRound(stacks=[0, 1], first_to_act=0, min_bet=2, initial_bets=[1, 2])
+    assert 0 in round_.all_in
+    assert round_.current_player == 1
+    assert ActionType.CHECK in round_.legal_actions()
+
+
+def test_no_stack_can_go_negative_across_a_round() -> None:
+    round_ = BettingRound(stacks=[100, 3, 7], min_bet=2)
+    round_.apply(BettingAction(ActionType.BET, amount=40))
+    round_.apply(BettingAction(ActionType.CALL))
+    round_.apply(BettingAction(ActionType.CALL))
+
+    assert all(stack >= 0 for stack in round_.stacks)
+    assert round_.stacks[1] == 0
+    assert round_.stacks[2] == 0
+    assert round_.pot == 40 + 3 + 7
+
+
 def test_initial_bets_seed_pot_for_posted_blinds() -> None:
     round_ = BettingRound(stacks=[99, 98], first_to_act=0, initial_bets=[1, 2])
     assert round_.pot == 3

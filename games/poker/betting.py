@@ -58,6 +58,11 @@ class BettingRound:
         self._acted_since_last_raise = set()
         self._capped_from_short_raise = set()
         self.current_player = self.first_to_act
+        if self.first_to_act in self.all_in:
+            # Posting a blind can leave a player with nothing, and someone already
+            # all-in has no decision to make - the action starts with the next player
+            # who does. If nobody does, is_settled() ends the round immediately.
+            self._advance_to_next_player()
 
     def _active_players(self) -> list[int]:
         return [p for p in range(len(self.stacks)) if p not in self.folded]
@@ -111,7 +116,11 @@ class BettingRound:
         elif action.type is ActionType.CHECK:
             self._acted_since_last_raise.add(player)
         elif action.type is ActionType.CALL:
-            self._put_in(player, self.current_bet - self.bets[player])
+            # A player who cannot cover the full call goes all-in for what they have
+            # rather than owing the difference - the same clamp the bet/raise path
+            # applies, which is what keeps a stack from going negative.
+            owed = self.current_bet - self.bets[player]
+            self._put_in(player, min(owed, self.stacks[player]))
             self._acted_since_last_raise.add(player)
         else:  # BET or RAISE
             self._apply_bet_or_raise(player, action)

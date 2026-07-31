@@ -176,8 +176,12 @@ def _check_or_call(view: DecisionView) -> BettingAction:
 
 def _always_aggressive(view: DecisionView) -> BettingAction:
     # A bet has to exceed the current bet, which is not zero when the big blind is
-    # already posted, so open to one bet above whatever is out there.
-    target = view.current_bet + view.min_bet
+    # already posted, so open to one bet above whatever is out there - but never past
+    # what this player actually has, which for a short stack means all-in for less.
+    own_bet = view.current_bet - view.to_call
+    target = min(view.current_bet + view.min_bet, own_bet + view.stack)
+    if target <= view.current_bet:
+        return _check_or_call(view)  # too short to raise at all
     if ActionType.RAISE in view.legal_actions:
         return BettingAction(ActionType.RAISE, amount=target)
     if ActionType.BET in view.legal_actions:
@@ -199,7 +203,26 @@ def test_random_hands_conserve_chips(num_players: int) -> None:
     for _ in range(150):
         result = play_hand(strategies[:num_players], rng=rng)
         assert sum(result.final_stacks) == sum(result.starting_stacks)
+        # Conservation alone would still pass with a stack driven negative, since the
+        # chips subtracted from it land in the pot either way, so check the floor too.
+        assert all(stack >= 0 for stack in result.final_stacks)
         assert result.pot >= 3  # at least both blinds
         assert len(result.winners) >= 1
         if result.went_to_showdown:
             assert len(result.board) == 5
+
+
+@pytest.mark.parametrize("num_players", [2, 3])
+def test_short_stacks_never_go_negative(num_players: int) -> None:
+    # Uneven, very short stacks against an opponent who bets every chance: exactly the
+    # setup where a call larger than the stack would otherwise overdraw it.
+    rng = random.Random(7)
+    for _ in range(150):
+        stacks = [rng.randint(1, 12) for _ in range(num_players)]
+        result = play_hand(
+            [_always_aggressive, _check_or_call, _check_or_call][:num_players],
+            starting_stacks=stacks,
+            rng=rng,
+        )
+        assert all(stack >= 0 for stack in result.final_stacks)
+        assert sum(result.final_stacks) == sum(stacks)
