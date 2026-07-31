@@ -39,6 +39,8 @@ Details, including per-game build plans and what's deliberately simplified, in `
 
 The poker bot plays EV/pot-odds-based decisions — a solid, testable heuristic, not solved GTO (which is computationally intractable to solve exactly outside heavy abstraction, and that's not what this project is trying to do). The bridge and Court Piece solvers compute genuinely optimal play for the perfect-information sub-problem via double-dummy solving, then sample over the real imperfect-information game via PIMC — a real, standard technique, not a toy simplification.
 
+The poker equity engine currently treats every possible opponent hand as equally likely (a uniform range) — the same number a tool like Equilab shows as "vs. random hand." It doesn't yet model what a real opponent would plausibly be holding given how they've played. Weighted, non-uniform ranges are a planned extension, not an oversight — either hand-coded from published opening-range theory, or eventually fitted from real observed play (see "Why this exists" above).
+
 ## Running it
 
 Nothing runnable yet — this section gets written once poker's engine has a CLI to point at.
