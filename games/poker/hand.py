@@ -5,9 +5,10 @@ bets, deals each street, runs the betting rounds in order and awards the pot. It
 decides what a player does - every decision comes from the `Strategy` callables passed
 in, which keeps scripted test hands and real decision logic interchangeable.
 
-Side pots for uneven all-ins are out of scope (§5 stretch goals). The whole pot goes to
-the best hand, split evenly between winners on a tie, with any odd chip going to the
-first winner by seat.
+Side pots are handled: a player can only win chips up to their own total contribution
+from each opponent, so a short stack going all-in for less than others keep betting
+doesn't win money it never had a chance to risk. Each pot (main and side) is split
+evenly between winners on a tie, with any odd chip going to the first winner by seat.
 """
 
 import random
@@ -194,6 +195,48 @@ def _award(pot: int, winners: Sequence[int], stacks: list[int]) -> None:
     stacks[min(winners)] += odd_chip  # odd chip goes to the first winner by seat
 
 
+def _award_side_pots(
+    contributions: Sequence[int],
+    contenders: Sequence[int],
+    hole_cards: Sequence[Sequence[Card]],
+    board: Sequence[Card],
+    stacks: list[int],
+) -> tuple[int, ...]:
+    """Award the pot in side-pot layers, keyed by each player's total contribution
+    this hand (blinds plus every street). A short all-in can only win chips up to its
+    own contribution level; money above that level forms a separate layer that only
+    the players who put in that much can contest - so a short stack can never win
+    more than it risked.
+
+    Layers are built from every player's contribution, folded or not (their money is
+    still real chips in the pot and has to go to someone), but only `contenders`
+    (non-folded players) are eligible to win any given layer.
+
+    Returns every seat that won at least one layer, in seat order - the natural
+    generalisation of the single-pot case, where this reduces to exactly one layer.
+    """
+    levels = sorted(set(contributions))
+    winners: set[int] = set()
+    previous = 0
+    for level in levels:
+        if level == previous:
+            continue
+        layer_payers = sum(1 for contribution in contributions if contribution >= level)
+        layer_size = (level - previous) * layer_payers
+        eligible = [seat for seat in contenders if contributions[seat] >= level]
+        if not eligible:
+            # Should be unreachable: whoever set the contribution level that caused
+            # everyone below it to fold or fall short is themselves a contender who
+            # reaches at least that level, so every layer has at least one eligible
+            # player. Guarded anyway rather than silently dropping chips.
+            raise AssertionError(f"no eligible winners for a side-pot layer at {level}")
+        layer_winners = _showdown_winners(eligible, hole_cards, board)
+        _award(layer_size, layer_winners, stacks)
+        winners.update(layer_winners)
+        previous = level
+    return tuple(sorted(winners))
+
+
 def play_hand(
     strategies: Sequence[Strategy],
     *,
@@ -234,11 +277,13 @@ def play_hand(
     board: list[Card] = []
     folded: set[int] = set()
     pot = 0
+    contributions = list(forced_bets)  # each player's total chips in, across the hand
 
     for street in STREETS:
         if len(strategies) - len(folded) < MIN_PLAYERS:
             break  # everyone else folded, no reason to deal any further
         board.extend(deck.deal(street.cards_dealt))
+        stacks_before_street = list(stacks)
         pot += _run_betting(
             street,
             strategies,
@@ -251,13 +296,16 @@ def play_hand(
             preflop_seat if street.name == "preflop" else postflop_seat,
             forced_bets if street.name == "preflop" else None,
         )
+        for seat in range(len(strategies)):
+            contributions[seat] += stacks_before_street[seat] - stacks[seat]
 
     contenders = [seat for seat in range(len(strategies)) if seat not in folded]
     went_to_showdown = len(contenders) > 1
-    winners = (
-        _showdown_winners(contenders, hole_cards, board) if went_to_showdown else tuple(contenders)
-    )
-    _award(pot, winners, stacks)
+    if went_to_showdown:
+        winners = _award_side_pots(contributions, contenders, hole_cards, board, stacks)
+    else:
+        winners = tuple(contenders)
+        _award(pot, winners, stacks)
 
     return HandResult(
         board=tuple(board),

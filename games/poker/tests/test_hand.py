@@ -91,6 +91,52 @@ def test_folding_ends_the_hand_without_dealing_further_streets() -> None:
     assert result.net(0) == -1  # loses the small blind they posted
 
 
+def test_side_pot_caps_a_short_all_in_to_what_it_actually_risked() -> None:
+    # 3 players, seats 0/1/2 = B/C/A. A is the button with a short 10-chip stack; B is
+    # the small blind, C the big blind. Worked out by hand:
+    #
+    # Preflop: A shoves all-in for 10 (button acts first 3-handed). B (SB, posted 1)
+    # calls the 10. C (BB, posted 2) raises to 30. B calls the 30. A cannot act again,
+    # already all-in. Final preflop contributions: A=10, B=1+9+20=30, C=2+28=30.
+    # Flop/turn/river: B and C simply check them down (A has no more decisions).
+    #
+    # Total pot = 10 + 30 + 30 = 70, in two layers:
+    #   - main pot: level 0->10, 3 payers (A, B, C all contributed at least 10),
+    #     size = 10 * 3 = 30, contested by all 3 (everyone's contribution reaches it).
+    #   - side pot: level 10->30, 2 payers (only B and C put in past 10),
+    #     size = 20 * 2 = 40, contested only by B and C - A is not eligible, having
+    #     only risked 10.
+    #
+    # Hands: A has pocket aces (best), B pocket kings (second), C 7-2 offsuit that
+    # pairs deuces on the board (worst of the three, still just a low pair). So A
+    # should win the entire 30-chip main pot, and B - the better of the two players
+    # actually eligible - should win the entire 40-chip side pot. C wins nothing.
+    kings = [C(Rank.KING, Suit.CLUBS), C(Rank.KING, Suit.DIAMONDS)]
+    seven_deuce = [C(Rank.SEVEN, Suit.CLUBS), C(Rank.TWO, Suit.DIAMONDS)]
+    aces = [C(Rank.ACE, Suit.CLUBS), C(Rank.ACE, Suit.DIAMONDS)]
+    board = [
+        C(Rank.TWO, Suit.HEARTS), C(Rank.NINE, Suit.SPADES), C(Rank.QUEEN, Suit.DIAMONDS),
+        C(Rank.FOUR, Suit.CLUBS), C(Rank.JACK, Suit.HEARTS),
+    ]
+
+    b_strategy = ScriptedStrategy(CALL, CALL, CHECK, CHECK, CHECK)
+    c_strategy = ScriptedStrategy(BettingAction(ActionType.RAISE, amount=30), CHECK, CHECK, CHECK)
+    a_strategy = ScriptedStrategy(BettingAction(ActionType.RAISE, amount=10))
+
+    result = play_hand(
+        [b_strategy, c_strategy, a_strategy],
+        starting_stacks=[100, 100, 10],
+        deck=stacked_deck([kings, seven_deuce, aces], board),
+    )
+
+    assert result.pot == 70
+    assert set(result.winners) == {0, 2}  # B (side pot) and A (main pot); not C
+    assert result.net(2) == 20  # A: contributed 10, won the 30-chip main pot
+    assert result.net(0) == 10  # B: contributed 30, won the 40-chip side pot
+    assert result.net(1) == -30  # C: contributed 30, won nothing
+    assert sum(result.final_stacks) == sum(result.starting_stacks)  # chips conserved
+
+
 def test_tie_splits_the_pot() -> None:
     # A royal flush on the board is the best hand for both players, whatever they hold.
     board_plays_itself = [
