@@ -17,8 +17,8 @@ from games.poker.betting import ActionType
 from games.poker.hand import DEFAULT_STARTING_STACK, Blinds, HandResult, Strategy, play_hand
 from games.poker.personas import PersonaStrategy, strategy_for
 
-MIN_BOTS = 2
-MAX_BOTS = 4
+MIN_BOTS = 1
+MAX_BOTS = 5
 
 # A common small-tournament pace, not an arbitrary number: enough hands per blind
 # level for skill to matter, but not so many that blinds stay trivial relative to

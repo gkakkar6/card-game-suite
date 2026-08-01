@@ -52,14 +52,14 @@ def test_session_config_requires_exactly_one_human() -> None:
         SessionConfig(seats=(SeatConfig(name="Human", is_human=True),) * 2)
 
 
-@pytest.mark.parametrize("num_bots", [1, 5])
-def test_session_config_rejects_bot_counts_outside_two_to_four(num_bots: int) -> None:
+@pytest.mark.parametrize("num_bots", [0, 6])
+def test_session_config_rejects_bot_counts_outside_one_to_five(num_bots: int) -> None:
     with pytest.raises(ValueError):
         SessionConfig(seats=human_bot_seats(num_bots))
 
 
-@pytest.mark.parametrize("num_bots", [2, 3, 4])
-def test_session_config_accepts_two_to_four_bots(num_bots: int) -> None:
+@pytest.mark.parametrize("num_bots", [1, 2, 3, 4, 5])
+def test_session_config_accepts_one_to_five_bots(num_bots: int) -> None:
     SessionConfig(seats=human_bot_seats(num_bots))  # does not raise
 
 
@@ -183,6 +183,51 @@ def test_last_bot_ends_the_session_in_strict_mode() -> None:
     assert session.stacks[1] == 0  # not replenished in strict mode
 
 
+def test_the_only_bot_is_immediately_the_last_bot_at_the_minimum_table_size() -> None:
+    # 1 bot: the new lower boundary. There is no "some bots remain" branch to take at
+    # all here - the only bot busting is always the last-bot case, from the very first
+    # bust, with no prior elimination needed to get there.
+    session = Session(SessionConfig(seats=human_bot_seats(1)), check_or_call, rng=random.Random(1))
+    session.stacks[1] = 0
+
+    eliminated, replenished, strict_end = session._process_bot_eliminations([0, 1])
+
+    assert eliminated == []
+    assert replenished == 1
+    assert not strict_end
+    assert session.stacks[1] == session.config.starting_stack
+    assert 1 in session.active
+
+
+def test_the_only_bot_ends_the_session_in_strict_mode_at_the_minimum_table_size() -> None:
+    config = SessionConfig(seats=human_bot_seats(1), strict=True)
+    session = Session(config, check_or_call, rng=random.Random(1))
+    session.stacks[1] = 0
+
+    eliminated, replenished, strict_end = session._process_bot_eliminations([0, 1])
+
+    assert eliminated == []
+    assert strict_end
+    assert session.ended
+    assert session.stacks[1] == 0
+
+
+def test_elimination_removes_one_bot_among_five_at_the_maximum_table_size() -> None:
+    # 5 bots: the new upper boundary. One busting among five others is the ordinary
+    # "others remain" case, same as the 3-bot version above, just at the new ceiling.
+    session = Session(SessionConfig(seats=human_bot_seats(5)), check_or_call, rng=random.Random(1))
+    session.stacks[3] = 0  # one of five bots busts
+
+    eliminated, replenished, strict_end = session._process_bot_eliminations([0, 1, 2, 3, 4, 5])
+
+    assert eliminated == [3]
+    assert replenished is None
+    assert not strict_end
+    assert 3 not in session.active
+    assert session.active == {0, 1, 2, 4, 5}
+    assert not session.ended
+
+
 def test_simultaneous_bust_of_all_bots_replenishes_exactly_one() -> None:
     # Both bots hit zero in the same hand. Removing either individually would leave
     # a bot-less table, so exactly one has to survive - which one is an arbitrary,
@@ -265,15 +310,14 @@ def test_persistent_bankroll_carries_over_between_hands() -> None:
     assert hand2.hand_number == 1
 
 
-def _stable_table_seats() -> tuple[SeatConfig, ...]:
+def _stable_table_seats(num_bots: int = 2) -> tuple[SeatConfig, ...]:
     """Baseline-only bots: calmer than a bluffer/conservative mix, so a table this
     well-capitalised is very unlikely to see a bust within the few hands these tests
     play - they're testing button/blind bookkeeping, not survival."""
-    return (
-        SeatConfig(name="Human", is_human=True),
-        SeatConfig(name="BotA", is_human=False, persona=BASELINE),
-        SeatConfig(name="BotB", is_human=False, persona=BASELINE),
-    )
+    seats = [SeatConfig(name="Human", is_human=True)]
+    for i in range(num_bots):
+        seats.append(SeatConfig(name=f"Bot{i}", is_human=False, persona=BASELINE))
+    return tuple(seats)
 
 
 def fold_to_any_bet(view: DecisionView) -> BettingAction:
@@ -301,6 +345,53 @@ def test_button_rotates_through_active_seats_each_hand() -> None:
 
     assert buttons == [0, 1, 2, 0, 1, 2, 0]  # cycles through all 3 seats in order
     assert sum(session.stacks.values()) == 3 * 20_000  # chips only moved, none created
+
+
+def test_button_rotates_correctly_at_the_minimum_table_size() -> None:
+    # 1 bot: the new lower boundary (2 total players, heads-up). Measured: this seed
+    # is clean of eliminations, so the button strictly alternates - the heads-up case
+    # in deal_order, where the button and small blind are the same seat.
+    session = Session(
+        SessionConfig(seats=_stable_table_seats(1), starting_stack=20_000),
+        fold_to_any_bet,
+        rng=random.Random(0),
+    )
+    buttons = [session.button]
+    for _ in range(6):
+        summary = session.play_next_hand()
+        assert summary.button_after is not None
+        buttons.append(summary.button_after)
+
+    assert buttons == [0, 1, 0, 1, 0, 1, 0]
+    assert sum(session.stacks.values()) == 2 * 20_000
+
+
+def test_button_rotates_correctly_at_the_maximum_table_size() -> None:
+    # 5 bots: the new upper boundary (6 total players). Five real bots betting
+    # against each other is volatile enough that no seed stays elimination-free for
+    # several hands even at a very high stack - unlike the smaller tables above, this
+    # is a genuine property of a fuller table, not a fixable test setup. So instead of
+    # asserting an exact button sequence, this asserts what must hold regardless of
+    # how many eliminations happen along the way: the button always lands on a seat
+    # that is actually still active, and always moves somewhere while more than one
+    # seat remains - exercising deal_order, elimination and the button-advance
+    # together at the largest table session.py supports.
+    session = Session(
+        SessionConfig(seats=_stable_table_seats(5), starting_stack=50_000),
+        fold_to_any_bet,
+        rng=random.Random(1),
+    )
+    for _ in range(6):
+        if session.ended:
+            break
+        before = session.button
+        summary = session.play_next_hand()
+        if summary.button_after is None:
+            break
+        assert summary.button_after in session.active
+        if len(session.active) > 1:
+            assert summary.button_after != before
+    assert sum(session.stacks.values()) == 6 * 50_000  # chips only moved, none created
 
 
 def test_fixed_blinds_never_change_across_hands() -> None:

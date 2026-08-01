@@ -71,7 +71,7 @@ def build_config() -> SessionConfig:
     print("Defaults give you tournament mode: increasing blinds, strict elimination -")
     print("a session that actually ends. Answer 'n' to either for casual play instead.\n")
 
-    num_bots = _prompt_int("How many bots?", default=3, low=2, high=4)
+    num_bots = _prompt_int("How many bots?", default=3, low=1, high=5)
     seats = [SeatConfig(name="You", is_human=True)]
     for i in range(num_bots):
         default_persona = DEFAULT_BOT_PERSONAS[i % len(DEFAULT_BOT_PERSONAS)]
