@@ -2,8 +2,6 @@
 
 **Repo:** `card-suite` (Python package: `card_suite`). Plain and functional on purpose — the README carries the actual story (shared architecture across poker/bridge/Court Piece, the quantal persona model, the evaluation harness), not the name.
 
-Purpose of this doc: brief any Claude Code session (or future me) on what's been decided and why, without re-deriving it each time. Update it as decisions change — it should always reflect current reality, not just the plan we started with.
-
 Goal of the project, stated plainly: build a system that gets *me* better at poker and bridge by forcing me to formalise what "correct play" actually means, not just to produce a CV artifact. That goal drives several of the calls below.
 
 ---
@@ -65,7 +63,7 @@ Shared code never imports anything game-specific. It only knows:
 
 This is already general enough for 4-player partnership trick-taking as well as 2-player betting rounds — deliberately, so poker-first doesn't risk under-specifying it for bridge.
 
-**Concrete shape (Claude Code should finalise the exact types, this is the contract to preserve):**
+**Concrete shape (tbc finalise the exact types, this is the contract to preserve):**
 
 ```python
 from typing import Protocol, TypeVar, Generic
@@ -96,6 +94,8 @@ Given `action_values(state) -> {action: value}` (game-specific), the shared pers
 
 `engine/personas/quantal.py` holds this mechanism. Each game only has to supply `action_values()`; the noise/bias math is identical across games.
 
+**Bias and temperature must be applied to normalised, not raw, values.** Learned the hard way building poker's decision-making phase: `action_values()` returns real chip values, and chip values scale with pot size — a fixed additive bias tuned to look right in one pot size is either invisible or completely dominant in another, since it isn't compared against a consistent reference. The fix used in poker: divide the value dict by a per-decision scale (pot + to_call) before bias/temperature are applied, so bias becomes "a fraction of what's at stake" rather than a raw number that means something different every hand. This normalisation is game-specific (poker's natural scale is the pot; bridge or Court Piece would need their own equivalent — e.g. trick value or points swing) and belongs in the calling game's code, not in `quantal.py` itself, which stays a generic value-to-probability mapper. When bridge or Court Piece personas are built, do this normalisation from the start rather than discovering the same bug independently.
+
 **NLP opponent selection** (`engine/personas/nlp.py`) parses free text into a game-agnostic `OpponentIntent` (difficulty tier + loose descriptors). Each game maps that intent onto its own parameter space in `games/<game>/personas.py`.
 
 ---
@@ -117,27 +117,39 @@ Court Piece (aka Rang / Rung / Hokm) is real, confirmed against standard rules: 
 **Running-trump variant, precise name:** what's being built is specifically **Be-ranga Double Sar** — play starts with no trump suit at all; the first player unable to follow suit plays any card, and that card's suit becomes trump for the rest of the deal. (A related but different real variant, **Hidden Rung**, has trump chosen upfront and kept secret rather than genuinely undetermined — not what's being built here, but worth knowing it exists as a distinct thing.)
 
 Reasoning:
-- Poker's solver (Monte Carlo hand equity vs. pot odds) is well-scoped, testable incrementally, and gets the *entire* architecture — engine, personas, evaluation harness — proven end to end in a predictable ~3 weeks.
-- Bridge's double-dummy solver (exact minimax over a full deal, given all four hands known) is **the single hardest module in the whole project**. A correct-but-slow version is realistic in 1–2 weeks; a genuinely fast one (alpha-beta pruning, transposition tables) is its own piece of work. This sits in the *middle* of bridge's build — if it stalls, there's no working game yet. Building it second, once the surrounding scaffolding is proven on poker, is lower risk than building it first.
+- Poker's solver (Monte Carlo hand equity vs. pot odds) is well-scoped and testable incrementally, and gets the *entire* architecture — engine, personas, evaluation harness — proven end to end through a predictable, low-risk sequence of steps.
+- Bridge's double-dummy solver (exact minimax over a full deal, given all four hands known) is **the single hardest module in the whole project**. A correct-but-slow version is a realistic early milestone; a genuinely fast one (alpha-beta pruning, transposition tables) is its own piece of work. This sits in the *middle* of bridge's build — if it stalls, there's no working game yet. Building it second, once the surrounding scaffolding is proven on poker, is lower risk than building it first.
 - Bridge bidding is **not** a solved-optimum problem — it's convention-based (point count, suit length rules), closer to an expert system than an optimiser. Different kind of work from the double-dummy solver, not a continuation of it.
 - `engine/trick_taking/` (resolution, double-dummy solver, PIMC sampling) is written once against bridge and genuinely reused, not reimplemented, for Court Piece — both are whist-family games with identical trick-resolution logic. Only Court Piece's declare-phase and Court/Piece scoring are new game-specific code, which is why it's a much lighter build than bridge despite being "game 3."
 - Court Piece's running-trump variant is honestly an **extension** of the fixed-trump build, not a fourth full build. The only new work is treating trump as `Optional[Suit]` — undetermined until either the declare-phase (fixed) or a forced first-can't-follow-suit trigger (running) sets it.
 
 ### Poker build plan
-- **Week 1:** cards, deck, 7-card hand evaluator (test against known rankings), betting round state machine.
-- **Week 2:** Monte Carlo equity engine — hero hand + board + opponent range → win/tie/loss via simulation. Sanity-check against known references (AA vs KK ≈ 80%). This *is* `action_values()`.
-- **Week 3:** EV-based decisions, quantal persona layer on top, bot-vs-bot evaluation with CIs.
-- **Stretch:** real ranges instead of uniform-random opponent cards, bet-sizing as a decision axis, multiway pots.
+- **Phase 1:** cards, deck, 7-card hand evaluator (test against known rankings), betting round state machine.
+- **Phase 2:** Monte Carlo equity engine — hero hand + board + opponent range → win/tie/loss via simulation. Sanity-check against known references (AA vs KK ≈ 80%). This *is* `action_values()`.
+- **Phase 3:** EV-based decisions, quantal persona layer on top, bot-vs-bot evaluation with CIs.
+  - **New required piece: `games/poker/hand.py`.** Orchestrates one complete hand end to end — post forced bets → deal hole cards → preflop betting → flop → betting → turn → betting → river → betting → showdown (or early stop if only one player remains). Nothing else in this phase can actually run without it; `action_values()` and the persona layer only matter once real hands are being played through all four streets, and the evaluation harness needs this to generate the hands it scores.
+  - **Blinds:** small/big blind (no ante), posted via `betting.py`'s existing `initial_bets` — that mechanism already supports this, `hand.py` just needs to compute the list. Shape it as a named structure (`"blinds"`) rather than blind-specific logic scattered around, so other structures (e.g. an ante) can be added later without rework, even though only blinds are built now. Default placeholders, all configurable: SB=1, BB=2, starting stack=200.
+  - **Raise cap:** `betting.py` currently has no limit on raises per round — add `max_raises: int | None` to `BettingRound`, tracked per round, `RAISE` stops appearing in `legal_actions()` once hit. `hand.py` passes max_raises=3 for preflop and river, None (uncapped) for flop and turn.
+  - **Fold/call** are direct: value = equity × (pot + to_call) − to_call, straight from `hand_equity()` and the size of the bet facing the player. Fold is the 0 reference point.
+  - **Bet/raise value is always computed whenever chip-legal** (per `legal_actions()`, including the new raise cap) — NOT gated by an equity threshold. A weak hand's bet/raise value comes out low or genuinely negative, honestly, rather than the action being hidden entirely. This is deliberate: it lets a persona's aggression bias choose an objectively bad-looking bet sometimes (real "bluffing" style), using the bias mechanism already designed in §3 — no new mechanism needed.
+  - **Bet/raise sizing** scales continuously with equity above a reference point — not fixed sizes, not a solved equilibrium. `strength = (equity - reference) / (1 - reference)`, only meaningful when equity > reference; `reference` is a real parameter (default 0.5 = "beats a coinflip" when opening, i.e. to_call == 0; pot-odds break-even when facing a bet) — NOT hardcoded. Size = `min_size + strength × (max_size - min_size)` as a pot fraction, defaults min=0.33, max=1.5, both configurable. Always clamp to the player's actual stack and to `betting.py`'s minimum-raise legality. Note: size is computed from `max(strength, 0)` even when the reported action *value* is negative — a "bluff" still needs a sensible size, even though its value honestly reflects that it's -EV if called.
+  - A true optimal size would need a model of the opponent's fold-frequency by sizing, which doesn't exist against a uniform range and would reopen the GTO-solving problem this project deliberately avoids (see `README.md` "Honest scope"). This is a principled heuristic, not an equilibrium — document it as such.
+  - Explicitly **single-street EV**: values assume showdown happens now, not how the hand might develop across future streets. A real simplification, not an oversight — worth stating in the code, matching the project's honesty habit elsewhere.
+  - **No fold-equity model — a real, named limitation, not a hidden bug.** Because bet/raise value assumes the opponent always calls, this bot can only ever produce a "value bets only" style, honestly — not equilibrium-balanced bluffing (the GTO sense: bluffing at the exact frequency that makes a strong opponent indifferent between calling and folding). The bias-driven "bluffer" persona above is a real, describable aggressive style — it is not that.
+  - **Decision-time equity calls need different tuning from the equity engine's defaults.** `action_values()` always calls `hand_equity()` with `opponent_hole=None` (a bot never knows the opponent's cards) — meaning every decision risks landing on the expensive unknown-opponent-at-turn case (~45,540 combinations — measurably slow). Multiplied across every decision, every simulated hand, in a bot-vs-bot evaluation run needing thousands of hands for a trustworthy CI, that compounds into a real bottleneck. Fix: lower `MAX_EXACT_ENUMERATION` for decision-time calls specifically (somewhere between river's 990 and turn's 45,540, e.g. ~5,000 — keeps river exact and fast, forces turn onto Monte Carlo) and lower `iterations` (e.g. 500–1,000 vs. the equity engine's default of 10,000) — individual estimate noise is fine here since the evaluation harness's CI already aggregates over thousands of hands. This tuning is local to the `action_values()` call site; it doesn't touch `hand_equity()` itself, which keeps its precise defaults for tests, sanity checks, and the Phase 2 hand-review tool (§7).
+  - **Personas for the validating experiment (upgrades §4's original single-axis check):** five named configs. A near-optimal **baseline** (low temperature, no bias); a **bluffer** (strong positive bias toward bet/raise, chosen even when the underlying value is weak or negative); a **conservative/nit** (bias suppressing bet/raise unless the value is strong); a **calling station** (bias against folding — loose-passive, a genuinely different axis from the bluffer/conservative aggression axis, not a variant of either); and an **erratic/loose cannon** (high temperature, no bias — noisy rather than leaning). Validating claims: baseline beats bluffer, conservative, and calling station, each by a statistically significant margin (proving the architecture handles deviation in three different directions, not just two); baseline also beats the erratic persona specifically on temperature alone, which finally closes §4's original claim (that a low-temperature bot beats a high-temperature one) with a real result rather than only the mechanism-level check in `test_quantal.py`.
+  - **Evaluation harness stopping rule:** fixed hand count per matchup for the first version (default ~5,000 hands, a real parameter) rather than adaptive CI-width stopping — simpler to build correctly first; adaptive stopping is a reasonable later refinement, not a problem for this phase.
+- **Stretch:** real ranges instead of uniform-random opponent cards, multiway pots.
 
 ### Bridge build plan
-- **Week 1:** trick-taking core — deal, trick resolution, follow-suit/trump legality, 4-player turn order, partnership scoring. Mechanically simpler than poker's betting rounds.
-- **Week 2:** double-dummy solver. Flagged explicitly above as the highest-risk module in the project.
-- **Week 3:** PIMC sampling layer on top of the solver; start bidding as a separate, rule-based track.
+- **Phase 1:** trick-taking core — deal, trick resolution, follow-suit/trump legality, 4-player turn order, partnership scoring. Mechanically simpler than poker's betting rounds.
+- **Phase 2:** double-dummy solver. Flagged explicitly above as the highest-risk module in the project.
+- **Phase 3:** PIMC sampling layer on top of the solver; start bidding as a separate, rule-based track.
 - **Stretch:** convention refinements, doubling, solver speed work.
 
 ### Court Piece build plan
-- **Fixed trump (game 3):** declare-phase only — one player sees their first 5–6 cards and calls trump, caller role rotates each hand; Court/Piece scoring on top of trick resolution already built for bridge. With `engine/trick_taking/` already in place, this is closer to a 1-week build than a multi-week one.
-- **Running trump (extension):** trump starts as `None`; trick resolution skips the trump comparison until the first player who can't follow suit sets it, then the hand switches into standard trump-mode for the rest of play. Small, well-contained addition once fixed-trump works — not a separate multi-week build.
+- **Fixed trump (game 3):** declare-phase only — one player sees their first 5–6 cards and calls trump, caller role rotates each hand; Court/Piece scoring on top of trick resolution already built for bridge. With `engine/trick_taking/` already in place, this is a much lighter build than the previous two.
+- **Running trump (extension):** trump starts as `None`; trick resolution skips the trump comparison until the first player who can't follow suit sets it, then the hand switches into standard trump-mode for the rest of play. Small, well-contained addition once fixed-trump works — not a separate large build.
 
 ---
 
@@ -154,6 +166,8 @@ Once poker's bot + persona layer work end to end. Reuses the same `action_values
 **Honest scope:** this is the same EV/pot-odds heuristic as the bot, evaluated against an assumed opponent range — not a true solver. It will catch real, meaningful leaks (bad calls, missed value, wrong sizing) but not the subtler stuff real solvers catch (balanced bluff frequencies, blocker effects). Genuinely useful for the stated goal (getting better), not a substitute for GTO Wizard / PioSOLVER if that level of rigour is ever wanted.
 
 Requires real additional work beyond the bot: a way to input played hands, and pattern aggregation across many hands (not just one-off numbers).
+
+**Related, later idea — noted, not scoped:** the same (situation, chosen action) data this tool needs is also exactly what's needed to calibrate a persona's temperature/bias to actually match how a specific real person plays (the "plays like my cousin who never folds" idea in the README). The fitting itself is a small, tractable statistics problem — maximum-likelihood fitting of a handful of parameters against observed decisions, not a big modelling effort. The real barrier is data, not computation: real hole cards are only known at showdown, so every folded hand is missing exactly the information needed, and casual home-game sample sizes are small. This becomes practical once the web UI exists and hands get logged automatically as people actually play through it — worth keeping as a genuinely later idea, not a current build target.
 
 ---
 
