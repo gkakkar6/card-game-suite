@@ -1,5 +1,15 @@
 """The validating experiment for the whole architecture (ARCHITECTURE.md §4 and §5).
 
+Marked `slow` and skipped by default (see pyproject.toml's addopts) - every test here
+plays a real bot-vs-bot matchup with bootstrap resampling, so the module takes minutes,
+not the sub-second cost of the rest of the suite. Run it explicitly with:
+
+    uv run pytest -m slow
+
+Worth running after touching action_values.py, quantal.py, equity.py, or any persona's
+bias/temperature constants in personas.py - anything that can move a persona's actual
+behaviour rather than just its code.
+
 The roster covers four ways of being wrong: too aggressive, too passive, unwilling to
 fold, and simply noisy. §5 expects the baseline to beat all four.
 
@@ -45,6 +55,8 @@ from games.poker.personas import (
     ERRATIC,
     play_matchup,
 )
+
+pytestmark = pytest.mark.slow
 
 # Every hand runs real equity calculations, so this is the dominant cost in the suite.
 VALIDATION_HANDS = 120

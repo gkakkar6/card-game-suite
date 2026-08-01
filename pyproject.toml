@@ -14,6 +14,10 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "games"]
+addopts = "-m 'not slow'"
+markers = [
+    "slow: computationally expensive tests (real persona matchups) - run explicitly with `pytest -m slow`",
+]
 
 [tool.ruff]
 line-length = 100
