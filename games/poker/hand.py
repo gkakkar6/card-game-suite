@@ -101,6 +101,7 @@ class HandResult:
     hole_cards: tuple[tuple[Card, ...], ...]
     pot: int
     winners: tuple[int, ...]
+    contenders: tuple[int, ...]  # players who did not fold, i.e. reached showdown
     starting_stacks: tuple[int, ...]
     final_stacks: tuple[int, ...]
     went_to_showdown: bool
@@ -263,6 +264,7 @@ def play_hand(
         hole_cards=tuple(tuple(cards) for cards in hole_cards),
         pot=pot,
         winners=winners,
+        contenders=tuple(contenders),
         starting_stacks=initial_stacks,
         final_stacks=tuple(stacks),
         went_to_showdown=went_to_showdown,

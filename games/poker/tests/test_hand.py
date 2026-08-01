@@ -59,6 +59,7 @@ def test_scripted_hand_runs_every_street_to_showdown() -> None:
     assert [view.street for view in small_blind.views] == ["preflop", "flop", "turn", "river"]
     assert result.pot == 4  # two big blinds
     assert result.winners == (0,)
+    assert result.contenders == (0, 1)  # both players reached showdown
     assert result.net(0) == 2
     assert result.net(1) == -2
     assert sum(result.final_stacks) == sum(result.starting_stacks)  # chips conserved
@@ -84,6 +85,7 @@ def test_folding_ends_the_hand_without_dealing_further_streets() -> None:
     assert not result.went_to_showdown
     assert result.board == ()  # folded before the flop, so nothing else was dealt
     assert result.winners == (1,)
+    assert result.contenders == (1,)  # the folded player never reached showdown
     assert result.pot == 3  # the two blinds
     assert result.net(1) == 1  # wins the small blind
     assert result.net(0) == -1  # loses the small blind they posted
@@ -193,12 +195,15 @@ def _folds_to_any_bet(view: DecisionView) -> BettingAction:
     return FOLD if view.to_call > 0 else CHECK
 
 
-@pytest.mark.parametrize("num_players", [2, 3, 4])
+@pytest.mark.parametrize("num_players", [2, 3, 4, 5])
 def test_random_hands_conserve_chips(num_players: int) -> None:
     # Real shuffled decks rather than stacked ones, so this covers deal order, seat
     # order and street progression together. Chips can move between players but must
-    # never be created or destroyed.
-    strategies = [_check_or_call, _always_aggressive, _folds_to_any_bet, _check_or_call]
+    # never be created or destroyed. 5 is the largest table session.py supports
+    # (1 human + 4 bots), previously untested at the hand.py level.
+    strategies = [
+        _check_or_call, _always_aggressive, _folds_to_any_bet, _check_or_call, _always_aggressive,
+    ]
     rng = random.Random(99)
     for _ in range(150):
         result = play_hand(strategies[:num_players], rng=rng)
@@ -210,6 +215,22 @@ def test_random_hands_conserve_chips(num_players: int) -> None:
         assert len(result.winners) >= 1
         if result.went_to_showdown:
             assert len(result.board) == 5
+
+
+def test_five_handed_action_order_matches_standard_hold_em_rules() -> None:
+    # Verified against real poker rules: preflop starts at UTG (the seat after the big
+    # blind) and ends with the big blind, who gets the option; postflop starts at the
+    # seat right after the button (the small blind here, since it's seat 0).
+    order: dict[str, list[int]] = {"preflop": [], "flop": []}
+
+    def watcher(view: DecisionView) -> BettingAction:
+        if view.street in order:
+            order[view.street].append(view.player)
+        return CHECK if ActionType.CHECK in view.legal_actions else CALL
+
+    play_hand([watcher] * 5, rng=random.Random(3))
+    assert order["preflop"] == [2, 3, 4, 0, 1]
+    assert order["flop"] == [0, 1, 2, 3, 4]
 
 
 @pytest.mark.parametrize("num_players", [2, 3])
