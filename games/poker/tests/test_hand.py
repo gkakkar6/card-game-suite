@@ -241,14 +241,15 @@ def _folds_to_any_bet(view: DecisionView) -> BettingAction:
     return FOLD if view.to_call > 0 else CHECK
 
 
-@pytest.mark.parametrize("num_players", [2, 3, 4, 5])
+@pytest.mark.parametrize("num_players", [2, 3, 4, 5, 6])
 def test_random_hands_conserve_chips(num_players: int) -> None:
     # Real shuffled decks rather than stacked ones, so this covers deal order, seat
     # order and street progression together. Chips can move between players but must
-    # never be created or destroyed. 5 is the largest table session.py supports
-    # (1 human + 4 bots), previously untested at the hand.py level.
+    # never be created or destroyed. 6 is the largest table session.py supports once
+    # bot count widens to 1-5 (1 human + 5 bots).
     strategies = [
-        _check_or_call, _always_aggressive, _folds_to_any_bet, _check_or_call, _always_aggressive,
+        _check_or_call, _always_aggressive, _folds_to_any_bet,
+        _check_or_call, _always_aggressive, _folds_to_any_bet,
     ]
     rng = random.Random(99)
     for _ in range(150):
@@ -263,10 +264,7 @@ def test_random_hands_conserve_chips(num_players: int) -> None:
             assert len(result.board) == 5
 
 
-def test_five_handed_action_order_matches_standard_hold_em_rules() -> None:
-    # Verified against real poker rules: preflop starts at UTG (the seat after the big
-    # blind) and ends with the big blind, who gets the option; postflop starts at the
-    # seat right after the button (the small blind here, since it's seat 0).
+def _action_order(num_players: int, rng: random.Random) -> dict[str, list[int]]:
     order: dict[str, list[int]] = {"preflop": [], "flop": []}
 
     def watcher(view: DecisionView) -> BettingAction:
@@ -274,9 +272,36 @@ def test_five_handed_action_order_matches_standard_hold_em_rules() -> None:
             order[view.street].append(view.player)
         return CHECK if ActionType.CHECK in view.legal_actions else CALL
 
-    play_hand([watcher] * 5, rng=random.Random(3))
+    play_hand([watcher] * num_players, rng=rng)
+    return order
+
+
+def test_heads_up_action_order_matches_standard_hold_em_rules() -> None:
+    # Heads-up is a special case in both hand.py's _seat_order and session.py's
+    # deal_order: the button and small blind are the same seat, so it acts first
+    # preflop (as the button normally would) and last postflop (as the small blind
+    # normally would) - the opposite of who acts first in each phase at 3+ players.
+    order = _action_order(2, random.Random(5))
+    assert order["preflop"] == [0, 1]  # button/small blind acts first preflop
+    assert order["flop"] == [1, 0]  # big blind acts first postflop
+
+
+def test_five_handed_action_order_matches_standard_hold_em_rules() -> None:
+    # Verified against real poker rules: preflop starts at UTG (the seat after the big
+    # blind) and ends with the big blind, who gets the option; postflop starts at the
+    # seat right after the button (the small blind here, since it's seat 0).
+    order = _action_order(5, random.Random(3))
     assert order["preflop"] == [2, 3, 4, 0, 1]
     assert order["flop"] == [0, 1, 2, 3, 4]
+
+
+def test_six_handed_action_order_matches_standard_hold_em_rules() -> None:
+    # The largest table once session.py's bot count widens to 1-5 - the same pattern
+    # as 5-handed (UTG first preflop, big blind last with the option; small blind
+    # first postflop) has to keep holding at one more seat.
+    order = _action_order(6, random.Random(3))
+    assert order["preflop"] == [2, 3, 4, 5, 0, 1]
+    assert order["flop"] == [0, 1, 2, 3, 4, 5]
 
 
 @pytest.mark.parametrize("num_players", [2, 3])

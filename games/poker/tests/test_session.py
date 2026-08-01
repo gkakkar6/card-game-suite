@@ -76,6 +76,7 @@ def test_deal_order_matches_hand_py_convention_full_table() -> None:
     assert deal_order(3, frozenset({0, 1, 2}), button=0) == [1, 2, 0]
     assert deal_order(4, frozenset({0, 1, 2, 3}), button=2) == [3, 0, 1, 2]
     assert deal_order(5, frozenset({0, 1, 2, 3, 4}), button=4) == [0, 1, 2, 3, 4]
+    assert deal_order(6, frozenset(range(6)), button=1) == [2, 3, 4, 5, 0, 1]
 
 
 def test_deal_order_skips_inactive_seats() -> None:
