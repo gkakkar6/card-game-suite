@@ -17,8 +17,16 @@ from engine.personas.quantal import Persona
 from games.poker.betting import ActionType
 from games.poker.cli_strategy import CLIStrategy
 from games.poker.hand import DEFAULT_STARTING_STACK
+from games.poker.persona_selection import persona_for_text
 from games.poker.personas import BLUFFER, CALLING_STATION, CONSERVATIVE, ERRATIC, PERSONAS
 from games.poker.session import BlindSchedule, HandSummary, SeatConfig, Session, SessionConfig
+
+PERSONA_DESCRIPTION_HELP = (
+    "Describe your opponent, or type a persona name directly. I can currently "
+    "recognise: aggressive/bluffing, tight/conservative, calling-station/loose, "
+    "random/unpredictable, or optimal play - anything else falls back to optimal, "
+    "so ask for one of those styles if you want a specific lean."
+)
 
 # Cycled through for the default bot personas, skipping baseline: this is a CLI to
 # play against, and showcasing the range of styles out of the box is more interesting
@@ -48,11 +56,26 @@ def _prompt_int(question: str, default: int, low: int, high: int) -> int:
 def _prompt_persona(question: str, default: Persona[ActionType]) -> Persona[ActionType]:
     names = ", ".join(PERSONAS)
     while True:
-        raw = _prompt(f"{question} ({names})", default.name)
-        persona = PERSONAS.get(raw)
-        if persona is not None:
+        raw = _prompt(f"{question} ({names}, or describe a style)", default.name)
+        exact = PERSONAS.get(raw)
+        if exact is not None:
+            return exact
+
+        persona, _name, matched = persona_for_text(raw)
+        if not matched:
+            print(
+                f"  didn't recognise '{raw}' as a persona name or a described style - "
+                f"type one of {names}, or describe a style (e.g. 'aggressive', 'tight')"
+            )
+            continue
+
+        print(f"  Interpreting that as: {persona.name} (matched: {', '.join(matched)})")
+        if _prompt_yes_no("  Use this persona?", default=True):
             return persona
-        print(f"  unknown persona '{raw}' - choose one of: {names}")
+        # Declining just loops back to the same prompt above, which already accepts
+        # either an exact name or another description - covering both "re-describe"
+        # and "name it exactly" without a separate branch for each.
+        print("  OK - describe again, or type an exact name.")
 
 
 def _prompt_yes_no(question: str, default: bool) -> bool:
@@ -72,6 +95,7 @@ def build_config() -> SessionConfig:
     print("a session that actually ends. Answer 'n' to either for casual play instead.\n")
 
     num_bots = _prompt_int("How many bots?", default=3, low=1, high=5)
+    print(f"\n{PERSONA_DESCRIPTION_HELP}\n")
     seats = [SeatConfig(name="You", is_human=True)]
     for i in range(num_bots):
         default_persona = DEFAULT_BOT_PERSONAS[i % len(DEFAULT_BOT_PERSONAS)]
