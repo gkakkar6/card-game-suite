@@ -98,6 +98,8 @@ Given `action_values(state) -> {action: value}` (game-specific), the shared pers
 
 **NLP opponent selection** (`engine/personas/nlp.py`) parses free text into a game-agnostic `OpponentIntent` (difficulty tier + loose descriptors). Each game maps that intent onto its own parameter space in `games/<game>/personas.py`.
 
+**Deliberately maps onto existing, already-measured personas — never sets temperature/bias directly from parsed text.** The five poker personas behave sanely because their numbers were empirically measured against real decisions, not guessed (see the `AGGRESSION_BIAS = 8 → 40` history above). Letting free text set a dial value, even via a lookup table, would reintroduce that exact unmeasured-parameter risk behind a friendlier interface. If more nuance is wanted later, the right way to get it is more presets, each separately measured the same way — not a continuous dial nobody's validated. Also rule-based, not an LLM call: fully deterministic, testable with plain unit tests, no external dependency or API key needed to clone and run the repo — matters more given this is a public repo, not just a private tool.
+
 ---
 
 ## 4. Evaluation harness

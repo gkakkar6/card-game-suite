@@ -15,8 +15,10 @@ Updated as things ship — this table is the actual current state, not a plan dr
 | Component | Status |
 |---|---|
 | Repo scaffold / `Game` protocol | ✅ done |
-| Poker (heads-up NLHE) — decision engine | ✅ done (cards, hand evaluator, betting, equity, action values, personas, evaluation harness) |
-| Poker — playable (CLI / web) | ⬜ not started |
+| Poker (heads-up/multiway NLHE) — decision engine | ✅ done (cards, hand evaluator, betting, equity, action values, personas, evaluation harness) |
+| Poker — playable (CLI) | ✅ done (1–5 bots, persistent bankroll, tournament or cash mode, free-text opponent selection) |
+| Poker — free-text opponent selection (NLP) | 🚧 in progress (rule-based keyword matching works; tolerance being added now) |
+| Poker — playable (web) | ⬜ not started |
 | Bridge | ⬜ not started |
 | Court Piece — fixed trump | ⬜ not started |
 | Court Piece — running trump (Be-ranga Double Sar) | ⬜ not started |
@@ -40,6 +42,8 @@ Details, including per-game build plans and what's deliberately simplified, in `
 
 Currently five: **baseline** (near-optimal), and four ways of deviating from it — **bluffer** (too aggressive), **conservative** (too passive), **calling station** (won't fold), and **erratic** (just noisy, no lean). Each is a temperature/bias setting on the same shared decision engine, not a separate implementation (`ARCHITECTURE.md` §3). More can be added the same way, and the eventual goal is calibrating one against how a specific real person actually plays (see "Why this exists" above), not just hand-picking more archetypes.
 
+Selectable by name, or by describing a style in plain English (e.g. "someone tight and careful," "a loose aggressive maniac") — a rule-based keyword matcher, not an LLM call, deliberately: fully deterministic, testable with plain unit tests, and works with zero setup if you clone this repo. It maps free text onto these five already-measured personas rather than generating new ones from the description — letting text set temperature/bias directly, even through a lookup table, would reintroduce the exact unvalidated-parameter risk the empirical tuning exists to avoid. It always says what it inferred and asks for confirmation before committing, never silently.
+
 ## Honest scope
 
 The poker bot plays EV/pot-odds-based decisions — a solid, testable heuristic, not solved GTO (which is computationally intractable to solve exactly outside heavy abstraction, and that's not what this project is trying to do). The bridge and Court Piece solvers compute genuinely optimal play for the perfect-information sub-problem via double-dummy solving, then sample over the real imperfect-information game via PIMC — a real, standard technique, not a toy simplification.
@@ -50,4 +54,9 @@ This isn't just a theoretical gap — it's been measured. The baseline persona a
 
 ## Running it
 
-Nothing runnable yet — this section gets written once poker's engine has a CLI to point at.
+```
+uv sync
+uv run python scripts/play_cli.py
+```
+
+Prompts for table size (1–5 bots), and a persona per bot — by name, or by describing a style in your own words (it'll say what it inferred and confirm before committing). Defaults to a real tournament — increasing blinds, strict elimination, ends with a winner — answer no to either prompt for casual, endless play instead.
