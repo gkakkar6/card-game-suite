@@ -17,9 +17,9 @@ Updated as things ship — this table is the actual current state, not a plan dr
 | Repo scaffold / `Game` protocol | ✅ done |
 | Poker (heads-up/multiway NLHE) — decision engine | ✅ done (cards, hand evaluator, betting, equity, action values, personas, evaluation harness) |
 | Poker — playable (CLI) | ✅ done (1–5 bots, persistent bankroll, tournament or cash mode, free-text opponent selection) |
-| Poker — free-text opponent selection (NLP) | 🚧 in progress (rule-based keyword matching works; tolerance being added now) |
+| Poker — free-text opponent selection (NLP) | ✅ done (rule-based keyword matching, edit-distance typo tolerance with length-scaled thresholds and an exemption list for risky short keywords) |
 | Poker — playable (web) | ⬜ not started |
-| Bridge | ⬜ not started |
+| Bridge — Phase 1 (trick-taking core) | 🚧 in progress (dummy exposure, trick resolution, follow-suit legality done; double-dummy solver and bidding still to come) |
 | Court Piece — fixed trump | ⬜ not started |
 | Court Piece — running trump (Be-ranga Double Sar) | ⬜ not started |
 | Web UI | ⬜ not started |
