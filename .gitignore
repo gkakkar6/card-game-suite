@@ -21,6 +21,10 @@ htmlcov/
 # Claude Code local state — never commit this
 .claude/
 
+# Personal engineering log — backward-looking decision/bug record, not part of the
+# public repo. See the pointer to it in ARCHITECTURE.md's intro.
+DECISIONS.md
+
 # Environment / secrets
 .env
 .env.local
