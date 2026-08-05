@@ -11,17 +11,26 @@ no lookahead past the trick in front of the player. "Winning" here means winning
 CURRENT trick only - what happens on later tricks is not considered at all.
 
 Computed exactly via combinatorics, not simulated. For each legal card: first check
-whether it beats everything already played to the trick (trick_winner() decides this
-outright - if it doesn't, its win probability is 0, no further reasoning needed). Then
-every seat still to play this trick is a threat, *except* the one on the same side as
-the hand actually playing (partner(state.to_play)) - a trick either partner wins is a
-win for the whole side, so that seat can never zero out or discount a candidate's value,
-known or not. The dummy's hand is known exactly, so its threat (when it genuinely is one
-- an opponent deciding, not declarer or dummy itself) is checked directly against its own
-actually-legal cards (legal_plays()). The other, genuinely unseen seats are treated as
-one pool of cards, uniformly distributed between them, and a hypergeometric count answers
-"how likely is a beating card to land in a hand that's still to play this trick" -
-restricted to the seats that are actually adversarial, not just unseen.
+whether the *side* playing it is currently ahead - trick_winner() decides this outright,
+and if the winner is on the other side, the value is 0, no further reasoning needed. A
+side being ahead is not the same as candidate itself being the highest card down: the
+only way it can differ is the dummy's decision, where declarer may already have played
+a higher card earlier in this same trick - candidate not beating that is not a loss,
+since the side wins either way. What matters for the rest of the check is always
+whichever card is actually ahead right now (candidate, or that earlier same-side card),
+not candidate specifically - a card that is not currently winning is not what a future
+threat has to get past.
+
+Every seat still to play this trick is a threat to that card, *except* the one on the
+same side as the hand actually playing (partner(state.to_play)) - a trick either partner
+wins is a win for the whole side, so that seat can never zero out or discount a
+candidate's value, known or not. The dummy's hand is known exactly, so its threat (when
+it genuinely is one - an opponent deciding, not declarer or dummy itself) is checked
+directly against its own actually-legal cards (legal_plays()). The other, genuinely
+unseen seats are treated as one pool of cards, uniformly distributed between them, and a
+hypergeometric count answers "how likely is a beating card to land in a hand that's
+still to play this trick" - restricted to the seats that are actually adversarial, not
+just unseen.
 
 One honest, named simplification: whether a genuinely unseen hand holding a qualifying
 card would actually be forced to follow suit instead of playing it (and so couldn't
@@ -95,17 +104,25 @@ def trick_win_probabilities(game: Bridge, state: BridgeState) -> dict[Card, floa
     for candidate in game.legal_actions(state):
         led_suit = state.led_suit if state.led_suit is not None else candidate.suit
         trial_trick = (*state.trick, (state.to_play, candidate))
-        if trick_winner(trial_trick, led_suit, trump) != state.to_play:
+        winning_seat = trick_winner(trial_trick, led_suit, trump)
+        if winning_seat not in (state.to_play, same_side):
             values[candidate] = 0.0
             continue
+        # Whichever card is actually ahead right now - candidate itself, or (only
+        # possible for the dummy) an earlier same-side card declarer already played
+        # to this same trick that candidate doesn't need to beat, since either one
+        # winning is equally a win for the side. Future threats have to be checked
+        # against *that* card, not blindly against candidate - a candidate that
+        # isn't currently winning is not what anyone still has to beat.
+        current_best = next(card for seat, card in trial_trick if seat == winning_seat)
 
         if dummy in remaining_seats and dummy != same_side:
             dummy_legal = legal_plays(state.hands[dummy], led_suit)
-            if any(_beats(candidate, other, led_suit, trump) for other in dummy_legal):
+            if any(_beats(current_best, other, led_suit, trump) for other in dummy_legal):
                 values[candidate] = 0.0
                 continue
 
-        beaters = sum(1 for other in pool if _beats(candidate, other, led_suit, trump))
+        beaters = sum(1 for other in pool if _beats(current_best, other, led_suit, trump))
         values[candidate] = _survival_probability(pool_size, beaters, threat_size)
 
     return values

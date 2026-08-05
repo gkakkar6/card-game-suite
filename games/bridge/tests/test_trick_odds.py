@@ -175,6 +175,41 @@ def test_a_beater_in_an_opponents_own_partner_never_costs_that_opponent_the_tric
     assert trick_win_probabilities(game, state) == {card("9H"): 1.0}
 
 
+def test_not_overtaking_a_partners_own_earlier_card_is_still_a_win() -> None:
+    # Declarer(0) has already played the king to this trick, then an opponent(1)
+    # followed low. Dummy(2), deciding now, holds a card that does NOT beat
+    # declarer's king - but declarer's king is still winning regardless, and a trick
+    # either partner wins is a win for the side (same principle as the dummy-as-
+    # threat tests above, just for a card already played rather than still to come).
+    # No other threat exists, so this must be a certain win, not zero.
+    state = BridgeState(
+        contract=CONTRACT,
+        hands=((), (), (card("8H"),), (card("3H"),)),
+        trick=((0, card("KH")), (1, card("2H"))),
+    )
+    game = Bridge()
+    assert state.to_play == 2
+    assert game.current_player(state) == 0
+    assert trick_win_probabilities(game, state) == {card("8H"): 1.0}
+
+
+def test_future_threats_are_checked_against_the_partners_card_actually_winning() -> None:
+    # Same shape as above, but now a genuine threat exists - the 9 of hearts,
+    # sitting with the one remaining unseen opponent. 9H beats dummy's own 8H, but
+    # NOT declarer's king, which is what's actually protecting the trick. A version
+    # of this check that compared threats against the candidate (8H) instead of
+    # whichever card is actually ahead (the king) would wrongly score this 0 - it
+    # has to come out as a certain win.
+    state = BridgeState(
+        contract=CONTRACT,
+        hands=((), (), (card("8H"),), (card("9H"),)),
+        trick=((0, card("KH")), (1, card("2H"))),
+    )
+    game = Bridge()
+    assert state.to_play == 2
+    assert trick_win_probabilities(game, state) == {card("8H"): 1.0}
+
+
 def test_leading_offers_every_card_in_the_hand_on_turn() -> None:
     state = BridgeState(
         contract=CONTRACT,
