@@ -305,6 +305,31 @@ def test_responder_raises_opener_with_support_and_minimum_values() -> None:
     assert choose_bid(responder, auction) == Bid(2, Suit.SPADES)
 
 
+def test_responder_scoring_survives_a_wild_intervening_bid_at_the_top_level() -> None:
+    # Not a realistic auction - the point is that _cheapest(legal, opening.strain) can
+    # land on level 7 (the maximum) if something pushed the auction that high before
+    # this responder's turn, and the limit-raise candidate one level above that must
+    # not blow up trying to construct an invalid level-8 bid. Found running many real
+    # auctions through games/bridge/session.py (see DECISIONS.md) - a persona's
+    # temperature sampling landed on a wild UNSCORED jump bid, which is exactly the
+    # kind of "unrealistic but legal" auction shape this needs to survive regardless.
+    responder = [
+        card("4C"), card("6C"), card("7C"), card("TC"), card("JC"),
+        card("3D"), card("7D"), card("TD"), card("KD"),
+        card("2H"), card("TH"),
+        card("4S"), card("6S"),
+    ]
+    auction = (
+        new_auction(dealer=0)
+        .apply(None)
+        .apply(None)
+        .apply(Bid(1, Suit.SPADES))
+        .apply(Bid(7, Suit.HEARTS))
+    )
+    values = bid_values(responder, auction)  # must not raise
+    assert values[Bid(7, Suit.SPADES)] >= 0.0  # a real, finite score - not level 8
+
+
 def test_responder_shows_a_new_suit_before_raising_or_bidding_1nt() -> None:
     # Real SAYC priority: "1S = at least four spades, 6 or more points. Tends to deny
     # a heart fit" outranks "1NT = 6-9 points, denies four spades" for a hand that

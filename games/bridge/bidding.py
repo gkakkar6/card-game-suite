@@ -389,7 +389,15 @@ def _suit_response_values(
     assert opening.strain is not None  # dispatcher already excluded a notrump opening
     support = lengths[opening.strain]
     raise_bid = _cheapest(legal, opening.strain)  # the plain raise, if support qualifies
-    limit_raise_bid = Bid(raise_bid.level + 1, opening.strain) if raise_bid is not None else None
+    # No limit raise exists one level above a plain raise already at the top level -
+    # normally unreachable this early, but a wild enough intervening call (a high
+    # UNSCORED jump a persona's temperature sampled, not an argmax choice) can push
+    # the auction there regardless of what this responder's own hand looks like.
+    limit_raise_bid = (
+        Bid(raise_bid.level + 1, opening.strain)
+        if raise_bid is not None and raise_bid.level < MAX_LEVEL
+        else None
+    )
 
     scores: dict[Call, float] = {}
     for call in legal:
