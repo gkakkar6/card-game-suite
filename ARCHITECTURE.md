@@ -193,6 +193,14 @@ Reasoning:
 
 Decided: **web (React/TS + FastAPI)**, shared across all games, built **after** each game's engine is proven headless (CLI/text runner — needed for testing regardless). Decision logic never leaves Python; the frontend only renders state and posts actions. Not a personally-designed showcase — functional and consistent, reasonable default choices rather than deep collaborative design work per screen.
 
+**Bridge scoring and CLI, settled in planning:**
+- **Contract scoring** — a real gap Phase 1 deliberately deferred and nothing since needed: `payoff()` still only returns raw trick counts. V1 adds standard non-vulnerable point scoring — trick value 20/minor, 30/major, 40 first trick + 30/trick thereafter for notrump, times tricks bid if the contract is made; a flat 50-point penalty per undertrick if it fails (verify this exact figure against the same primary source used for bidding before relying on it, same discipline, not asserted from memory alone). Explicitly, honestly deferred as a named stretch, not silently missing: vulnerability, game/slam bonuses, doubling-dependent penalties (doubling isn't buildable yet regardless, bidding is uncontested-only).
+- **Session score is cumulative across hands**, persisted for the session the same way poker's bankroll is — points, not chips, no elimination logic needed since bridge has no bust concept at all.
+- **Session end: open-ended, no target.** Play until you quit. A real target (first-to-X, a genuine "rubber") is a deferred, later addition, not built now.
+- **Dealer rotates clockwise each new deal** — same principle as poker's button, determines who opens the bidding each hand.
+- **Partner and opponent selection is three fixed, role-specific prompts, not a variable loop like poker's** (bridge is always exactly 4 seats): partner first, with an explicit reminder of why it's the highest-stakes pick (the dummy rule means their skill is genuinely your outcome on hands where you're dummy), then first opponent, then second.
+- **New display work poker's CLI didn't need**: the auction shown as it actually unfolds, not just resolved silently into a contract; the dummy's hand shown face-up the moment it's exposed, matching the real game; the contract result (made/failed, by how many) and the running session score shown after each hand.
+
 ---
 
 ## 7. Phase 2 (later): hand-review tool
