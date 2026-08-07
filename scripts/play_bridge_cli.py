@@ -18,18 +18,55 @@ from games.bridge.cli_strategy import (
     format_contract,
 )
 from games.bridge.deal import SEATS
+from games.bridge.persona_selection import persona_for_text
 from games.bridge.personas import PERSONAS, BridgePersona
 from games.bridge.session import HandResult, SeatConfig, Session, SessionConfig
+
+PERSONA_DESCRIPTION_HELP = (
+    "Describe your partner or opponent, or type a persona name directly. I can "
+    "currently recognise: best/optimal/expert play, aggressive/bold, "
+    "conservative/tight/careful, selfish/glory-seeking, sneaky/tricky/baiting, or "
+    "beginner/inexperienced - anything else falls back to baseline, so ask for one "
+    "of those styles if you want a specific lean."
+)
+
+
+def _prompt_yes_no(question: str, default: bool) -> bool:
+    default_text = "yes" if default else "no"
+    while True:
+        raw = input(f"{question} [{default_text}]: ").strip().lower()
+        if not raw:
+            return default
+        if raw in ("y", "yes"):
+            return True
+        if raw in ("n", "no"):
+            return False
+        print("  answer yes or no")
 
 
 def _prompt_persona(question: str) -> BridgePersona:
     names = ", ".join(PERSONAS)
     while True:
-        raw = input(f"{question}\n  ({names}): ").strip().lower()
-        persona = PERSONAS.get(raw)
-        if persona is not None:
+        raw = input(f"{question}\n  ({names}, or describe a style): ").strip()
+        exact = PERSONAS.get(raw.lower())
+        if exact is not None:
+            return exact
+
+        persona, _name, matched = persona_for_text(raw)
+        if not matched:
+            print(
+                f"  didn't recognise '{raw}' as a persona name or a described style - "
+                f"type one of {names}, or describe a style (e.g. 'aggressive', 'sneaky')"
+            )
+            continue
+
+        print(f"  Interpreting that as: {persona.name} (matched: {', '.join(matched)})")
+        if _prompt_yes_no("  Use this persona?", default=True):
             return persona
-        print(f"  '{raw}' isn't one of: {names}")
+        # Declining just loops back to the same prompt above, which already accepts
+        # either an exact name or another description - covering both "re-describe"
+        # and "name it exactly" without a separate branch for each.
+        print("  OK - describe again, or type an exact name.")
 
 
 def build_config() -> SessionConfig:
@@ -41,6 +78,7 @@ def build_config() -> SessionConfig:
         "that on any hand where you end up as dummy, you make zero decisions at all; "
         "your partner's skill alone determines how that hand goes."
     )
+    print(f"\n{PERSONA_DESCRIPTION_HELP}\n")
     partner_persona = _prompt_persona("Persona for your partner?")
     opp1_persona = _prompt_persona("\nPersona for your first opponent?")
     opp2_persona = _prompt_persona("\nPersona for your second opponent?")
