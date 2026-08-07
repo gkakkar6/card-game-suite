@@ -19,8 +19,7 @@ Updated as things ship — this table is the actual current state, not a plan dr
 | Poker — playable (CLI) | ✅ done (1–5 bots, persistent bankroll, tournament or cash mode, free-text opponent selection) |
 | Poker — free-text opponent selection (NLP) | ✅ done (rule-based keyword matching, edit-distance typo tolerance with length-scaled thresholds and an exemption list for risky short keywords) |
 | Poker — playable (web) | ⬜ not started |
-| Bridge — engine (trick-play, solver, PIMC, bidding, personas) | ✅ done (dummy exposure, exact double-dummy solving, PIMC under real uncertainty, SAYC bidding, six personas — only a playable interface is missing) |
-| Bridge — playable (CLI) | ⬜ not started |
+| Bridge — playable (CLI) | ✅ done (dummy exposure, exact double-dummy solving, PIMC under real uncertainty, SAYC bidding, six personas, real contract scoring, free-text opponent/partner selection) |
 | Court Piece — fixed trump | ⬜ not started |
 | Court Piece — running trump (Be-ranga Double Sar) | ⬜ not started |
 | Web UI | ⬜ not started |
@@ -47,6 +46,8 @@ Selectable by name, or by describing a style in plain English (e.g. "someone tig
 
 Bridge has six, covering both bidding and card play in one combined profile per seat: **baseline** (near-optimal in both), **aggressive**/**conservative** (the same lean, mirrored across bidding and play), **selfish** (biased toward declarer's own hand getting credit for a trick over dummy's, in the one narrow case that costs the partnership nothing to indulge), **baiter** (biased toward the less-committal-looking card among options already proven exactly tied in value — genuinely free, never a real cost, since the alternatives are worth the same), and **unaware** (knows how to win a trick, has no sense of the wider hand — always the fast single-trick heuristic, never the deeper search). Same underlying mechanism as poker's five, with one real difference bridge forced: which calls or cards are even legal changes every decision, unlike poker's five fixed actions, so bridge's bias is a small function computed fresh each time rather than a static lookup table.
 
+Selected the same way as poker's — by name, or by describing a style in plain English, same confirm-before-committing behaviour — but asked for three separate times: partner first, then each opponent, since partner is the higher-stakes pick given the dummy rule. Its own keyword table found two collisions worth naming specifically, since they're the same severity as poker's `unpredictable`/`predictable` case — a genuine semantic opposite, not just an unrelated word: "experienced" was one edit from "inexperienced," and "trick"/"tricks" — bridge's single most basic word — was one edit from "tricky," meaning ordinary bridge conversation ("he won every trick") would have false-positived into the baiter persona before it was caught and exempted.
+
 ## Honest scope
 
 The poker bot plays EV/pot-odds-based decisions — a solid, testable heuristic, not solved GTO (which is computationally intractable to solve exactly outside heavy abstraction, and that's not what this project is trying to do). The bridge and Court Piece solvers compute genuinely optimal play for the perfect-information sub-problem via double-dummy solving, then sample over the real imperfect-information game via PIMC — a real, standard technique, not a toy simplification.
@@ -67,3 +68,9 @@ uv run python scripts/play_cli.py
 ```
 
 Prompts for table size (1–5 bots), and a persona per bot — by name, or by describing a style in your own words (it'll say what it inferred and confirm before committing). Defaults to a real tournament — increasing blinds, strict elimination, ends with a winner — answer no to either prompt for casual, endless play instead.
+
+```
+uv run python scripts/play_bridge_cli.py
+```
+
+Prompts for a partner and two opponents, in that order — by name or by description, same confirm-before-committing behaviour as poker's. Runs open-ended: full hands from deal through bidding, play, and scoring, one after another, with the running score shown after every hand, until you quit.
