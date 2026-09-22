@@ -20,8 +20,8 @@ Updated as things ship — this table is the actual current state, not a plan dr
 | Poker — free-text opponent selection (NLP) | ✅ done (rule-based keyword matching, edit-distance typo tolerance with length-scaled thresholds and an exemption list for risky short keywords) |
 | Poker — playable (web) | ⬜ not started |
 | Bridge — playable (CLI) | ✅ done (dummy exposure, exact double-dummy solving, PIMC under real uncertainty, SAYC bidding, six personas, real contract scoring, free-text opponent/partner selection) |
-| Court Piece — fixed trump | ⬜ not started |
-| Court Piece — running trump (Be-ranga Double Sar) | ⬜ not started |
+| Court Piece — fixed trump | ✅ done (declare-phase heuristic, double-dummy solver + PIMC reusing `engine/trick_taking/`, kot/piece scoring, playable CLI; baseline persona only so far) |
+| Court Piece — running trump (Be-ranga Double Sar) | ✅ done (trump undetermined until the first void play sets it, same solver/PIMC/scoring machinery as fixed trump, flat scoring, playable CLI) |
 | Web UI | ⬜ not started |
 | Hand-review tool | ⬜ not started |
 
@@ -74,3 +74,15 @@ uv run python scripts/play_bridge_cli.py
 ```
 
 Prompts for a partner and two opponents, in that order — by name or by description, same confirm-before-committing behaviour as poker's. Runs open-ended: full hands from deal through bidding, play, and scoring, one after another, with the running score shown after every hand, until you quit.
+
+```
+uv run python scripts/play_court_piece_cli.py
+```
+
+Fixed-trump Court Piece. Prompts for a target number of courts, or free play. Every bot is currently the baseline persona (no persona choice yet — see "Status" above). Rotates who calls trump each hand, deals the full hand, shows you your first five cards for the declare-phase call, then plays out all thirteen tricks with the running court total shown after every hand, until you quit or hit the target.
+
+```
+uv run python scripts/play_court_piece_running_cli.py
+```
+
+Running-trump Court Piece (Be-ranga Double Sar). Same setup prompt as fixed trump, but no declare phase at all — trump starts undetermined ("not yet set" in the play view) and locks in automatically the moment any player first can't follow the suit led, to whatever they play. Scores flat (no caller/non-caller multiplier, since nobody chose trump) — otherwise the same kot/piece rules and running court total as fixed trump.
