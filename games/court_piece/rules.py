@@ -38,8 +38,9 @@ def partner(seat: Seat) -> Seat:
 
 
 def opening_leader(caller: Seat) -> Seat:
-    """The player on the trump-caller's left, who leads to the first trick."""
-    return (caller + 1) % SEATS
+    """The trump-caller themselves, who leads to the first trick - calling trump
+    carries the right (and the risk) of setting the first suit led."""
+    return caller
 
 
 @dataclass(frozen=True)
@@ -108,7 +109,7 @@ class CourtPieceState:
     @property
     def leader(self) -> Seat:
         """Seat on lead to the current trick: whoever won the last one, or the
-        player to the caller's left before any trick has been played."""
+        trump-caller themselves before any trick has been played."""
         if self.trick:
             leader, _card = self.trick[0]
             return leader

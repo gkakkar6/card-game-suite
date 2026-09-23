@@ -34,7 +34,7 @@ def test_a_single_trick_callers_side_wins_is_worth_one() -> None:
     state = endgame(CALL, hand("AH"), hand("3H"), hand("4H"), hand("2H"))
     solution = solve(game, state)
     assert solution.tricks == 1.0
-    assert solution.values == {card("3H"): 1.0}  # east's only legal card
+    assert solution.values == {card("AH"): 1.0}  # caller (north) leads and it's their only card
 
 
 def test_a_single_trick_the_opponents_win_is_worth_nothing() -> None:
@@ -64,18 +64,22 @@ def test_a_single_trick_a_ruff_wins_is_worth_one() -> None:
 def test_caller_takes_both_tricks_holding_ace_queen_over_the_king() -> None:
     # Trump is clubs, but none of these cards are clubs, so this is effectively the
     # same notrump-like ace-queen-over-king tenace as bridge's own equivalent test.
-    # Caller (north) holds A-Q of hearts, east holds the king, and the other four
-    # cards are all lower than the king - nothing but those three can win a trick.
+    # Calling trump now carries the lead, so the caller (north) can't hold the
+    # tenace and finesse it the way east used to - leading a tenace into your own
+    # king-holding right-hand opponent gains nothing over letting your partner sit
+    # behind them instead. So here north (caller) holds the king-three and leads,
+    # east holds nothing dangerous, and the caller's partner (south) holds A-Q,
+    # playing third each trick - always after the king has already been forced out.
     #
-    # Worked out by hand, both of east's leads: leading the king lets north win with
-    # the ace and cash the queen; leading the three, north plays the queen straight
-    # away (nothing above it is out except north's own ace) and keeps the ace for the
+    # Worked out by hand, both of north's leads: leading the king lets south win with
+    # the ace and cash the queen; leading the three, south plays the queen straight
+    # away (nothing above it is out except south's own ace) and keeps the ace for the
     # second trick. Two tricks either way - the same double-dummy-sees-everything
     # reasoning bridge's equivalent test documents, not a card-reading skill the
     # solver actually has.
     game = CourtPiece()
     state = endgame(
-        NOTRUMP_LIKE_CALL, hand("AH", "QH"), hand("KH", "3H"), hand("5H", "4H"), hand("7H", "6H")
+        NOTRUMP_LIKE_CALL, hand("KH", "3H"), hand("5H", "4H"), hand("AH", "QH"), hand("7H", "6H")
     )
     solution = solve(game, state)
 
@@ -144,8 +148,8 @@ def test_transposition_table_does_not_conflate_identical_hands_under_different_t
     hands = (hand("2H"), hand("3H"), hand("9S"), hand("4H"))
     spade_trump = CourtPieceState(call=TrumpCall(trump=Suit.SPADES, caller=0), hands=hands)
     heart_trump = CourtPieceState(call=TrumpCall(trump=Suit.HEARTS, caller=0), hands=hands)
-    assert spade_trump.to_play == 1  # same to_play in both - same key but for trump
-    assert heart_trump.to_play == 1
+    assert spade_trump.to_play == 0  # same to_play in both - same key but for trump
+    assert heart_trump.to_play == 0
 
     search = _Search(
         game, spade_trump, prune=True, transpositions=True, equivalence=True, narrow=True

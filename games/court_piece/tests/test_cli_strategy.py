@@ -9,7 +9,7 @@ from games.court_piece.cli_strategy import (
     parse_card,
     parse_suit,
 )
-from games.court_piece.rules import CourtPiece, CourtPieceState, TrumpCall
+from games.court_piece.rules import CompletedTrick, CourtPiece, CourtPieceState, TrumpCall
 from games.court_piece.tests.test_rules import card
 
 CALL = TrumpCall(trump=Suit.SPADES, caller=0)
@@ -79,11 +79,11 @@ def test_format_call_names_trump_and_caller() -> None:
 
 
 def test_format_play_view_shows_your_hand_and_legal_cards() -> None:
-    # CALL's caller is seat 0, so opening_leader() puts seat 1 on lead with an empty
-    # trick and no completed history - the cards have to sit with seat 1, not seat 0.
-    state = CourtPieceState(call=CALL, hands=((), (card("2C"), card("3C")), (), ()))
+    # CALL's caller is seat 0, so opening_leader() puts seat 0 on lead with an empty
+    # trick and no completed history.
+    state = CourtPieceState(call=CALL, hands=((card("2C"), card("3C")), (), (), ()))
     game = CourtPiece()
-    assert state.to_play == 1
+    assert state.to_play == 0
     text = format_play_view(game, state)
     assert "your hand" in text
     assert "2C" in text and "3C" in text
@@ -109,6 +109,31 @@ def test_format_play_view_shows_trump_not_yet_set_for_running_trump() -> None:
     state = CourtPieceState(call=running_call, hands=((), (card("2C"), card("3C")), (), ()))
     text = format_play_view(CourtPiece(), state)
     assert "not yet set" in text
+
+
+def test_format_play_view_shows_no_trick_history_before_any_trick_completes() -> None:
+    state = CourtPieceState(call=CALL, hands=((card("2C"), card("3C")), (), (), ()))
+    text = format_play_view(CourtPiece(), state)
+    assert "tricks so far" not in text.lower()
+
+
+def test_format_play_view_lists_every_completed_trick_so_far() -> None:
+    completed = (
+        CompletedTrick(
+            cards=((0, card("AS")), (1, card("2S")), (2, card("3S")), (3, card("4S"))),
+            winner=0,
+        ),
+    )
+    state = CourtPieceState(
+        call=CALL,
+        hands=((), (card("2C"),), (), ()),
+        completed=completed,
+    )
+    text = format_play_view(CourtPiece(), state)
+    assert "tricks so far" in text.lower()
+    assert "trick 1" in text.lower()
+    assert "AS" in text and "2S" in text and "3S" in text and "4S" in text
+    assert "won by seat 0" in text
 
 
 # ---------------------------------------------------------------------------

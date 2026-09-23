@@ -9,7 +9,7 @@ never a computed value.
 from collections.abc import Sequence
 
 from engine.cards import Card, Rank, Suit
-from games.court_piece.rules import CourtPiece, CourtPieceState, TrumpCall
+from games.court_piece.rules import CompletedTrick, CourtPiece, CourtPieceState, TrumpCall
 
 _RANKS = {rank.symbol: rank for rank in Rank}
 _SUITS = {suit.symbol: suit for suit in Suit}
@@ -76,17 +76,30 @@ class CLIDeclareStrategy:
                 print(f"  {exc}")
 
 
+def _format_completed_trick(number: int, trick: CompletedTrick) -> str:
+    cards = ", ".join(f"seat {seat}: {card}" for seat, card in trick.cards)
+    return f"  trick {number}: {cards} - won by seat {trick.winner}"
+
+
 def format_play_view(game: CourtPiece, state: CourtPieceState) -> str:
-    """A human-readable summary of one card-play decision."""
+    """A human-readable summary of one card-play decision, including every trick
+    played so far this hand - a real player can always recall how a hand went, so
+    the CLI shouldn't force you to remember it yourself."""
     to_play = state.to_play
     trick = ", ".join(f"seat {seat}: {card}" for seat, card in state.trick) or "(you lead)"
     legal = _format_hand(game.legal_actions(state))
     lines = [
         f"--- Trick {len(state.completed) + 1} - trump: {format_trump(state.call.trump)} ---",
-        f"trick so far: {trick}",
-        f"your hand: {_format_hand(state.hands[to_play])}",
-        f"legal cards: {legal}",
     ]
+    if state.completed:
+        lines.append("tricks so far:")
+        lines.extend(
+            _format_completed_trick(number, completed)
+            for number, completed in enumerate(state.completed, start=1)
+        )
+    lines.append(f"trick so far: {trick}")
+    lines.append(f"your hand: {_format_hand(state.hands[to_play])}")
+    lines.append(f"legal cards: {legal}")
     return "\n".join(lines)
 
 

@@ -31,9 +31,9 @@ def test_partner_is_the_opposite_seat() -> None:
     assert partner(3) == 1
 
 
-def test_opening_leader_is_to_callers_left() -> None:
-    assert opening_leader(0) == 1
-    assert opening_leader(3) == 0
+def test_opening_leader_is_the_caller_themselves() -> None:
+    assert opening_leader(0) == 0
+    assert opening_leader(3) == 3
 
 
 def test_current_player_is_always_the_seat_on_turn() -> None:
@@ -141,10 +141,10 @@ def test_a_void_play_sets_trump_to_that_cards_own_suit() -> None:
 def test_leading_never_sets_trump_even_if_it_is_still_undetermined() -> None:
     # Nothing is led yet, so nobody can be "void" - the leader is always free to play
     # anything, and that alone must never set trump. RUNNING_CALL's caller is seat 0,
-    # so opening_leader() puts seat 1 on lead with no trick or history yet.
+    # so opening_leader() puts seat 0 on lead with no trick or history yet.
     game = CourtPiece()
-    state = CourtPieceState(call=RUNNING_CALL, hands=(hand(), hand("3S"), hand(), hand()))
-    assert state.to_play == 1
+    state = CourtPieceState(call=RUNNING_CALL, hands=(hand("3S"), hand(), hand(), hand()))
+    assert state.to_play == 0
     result = game.apply(state, card("3S"))
     assert result.call.trump is None
 

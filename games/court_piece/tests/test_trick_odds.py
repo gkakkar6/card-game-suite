@@ -50,8 +50,11 @@ def test_a_beater_that_happens_to_sit_with_partner_is_still_genuinely_uncertain(
     # seats 0 and 2 (the two genuine opponents) count as "draw" - so this comes out as
     # a real, fractional probability, not the certain win bridge's known-dummy
     # equivalent test gets.
+    #
+    # Caller is seat 1 here specifically so seat 1 leads (opening_leader() puts the
+    # caller themselves on lead) - the seat/hand assignments are otherwise identical.
     state = CourtPieceState(
-        call=CALL,
+        call=TrumpCall(trump=TRUMP, caller=1),
         hands=((card("2H"),), (card("9H"),), (card("KH"),), (card("AH"),)),
     )
     game = CourtPiece()
